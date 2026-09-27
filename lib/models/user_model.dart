@@ -59,7 +59,7 @@ class UserModel {
   bool get isApproved => status == 'approved';
   bool get isPending => status == 'pending';
   bool get isRejected => status == 'rejected';
-  bool get isSuperAdmin => role == 'super_admin';
+  bool get isSuperAdmin => role == 'admin' || role == 'super_admin';
 
   String get primaryPhoto {
     if (photos.isNotEmpty) {

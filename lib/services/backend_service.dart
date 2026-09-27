@@ -245,24 +245,29 @@ class BackendService extends ChangeNotifier {
           newUserId = userCredential.user?.uid ?? newUserId;
 
           final storage = FirebaseStorage.instance;
-          final selfieRef = storage.ref().child('verifications/$newUserId/selfie.jpg');
-          final nicFrontRef = storage.ref().child('verifications/$newUserId/nic_front.jpg');
-          final nicBackRef = storage.ref().child('verifications/$newUserId/nic_back.jpg');
+          final selfieRef = storage.ref().child('verification/$newUserId/selfie.jpg');
+          final nicFrontRef = storage.ref().child('verification/$newUserId/nic_front.jpg');
+          final nicBackRef = storage.ref().child('verification/$newUserId/nic_back.jpg');
+          final metadata = SettableMetadata(contentType: 'image/jpeg');
 
           if (compressedSelfie != null) {
-            await selfieRef.putFile(compressedSelfie);
-            selfieUrl = await selfieRef.getDownloadURL();
+            final task = await selfieRef.putFile(compressedSelfie, metadata);
+            selfieUrl = await task.ref.getDownloadURL();
+            debugPrint('Selfie uploaded to Firebase Storage: $selfieUrl');
           }
           if (compressedNicFront != null) {
-            await nicFrontRef.putFile(compressedNicFront);
-            nicFrontUrl = await nicFrontRef.getDownloadURL();
+            final task = await nicFrontRef.putFile(compressedNicFront, metadata);
+            nicFrontUrl = await task.ref.getDownloadURL();
+            debugPrint('NIC Front uploaded to Firebase Storage: $nicFrontUrl');
           }
           if (compressedNicBack != null) {
-            await nicBackRef.putFile(compressedNicBack);
-            nicBackUrl = await nicBackRef.getDownloadURL();
+            final task = await nicBackRef.putFile(compressedNicBack, metadata);
+            nicBackUrl = await task.ref.getDownloadURL();
+            debugPrint('NIC Back uploaded to Firebase Storage: $nicBackUrl');
           }
-        } catch (firebaseErr) {
-          debugPrint('Firebase registration upload notice: $firebaseErr');
+        } catch (firebaseErr, stack) {
+          debugPrint('⚠️ Firebase Storage upload failed: $firebaseErr');
+          debugPrint('Stack trace: $stack');
         }
       }
 
@@ -574,6 +579,67 @@ class BackendService extends ChangeNotifier {
     return false;
   }
 
+  /// Resubmit updated verification documents after rejection
+  Future<bool> resubmitVerificationDocuments({
+    required String userId,
+    File? selfieFile,
+    File? nicFrontFile,
+    File? nicBackFile,
+  }) async {
+    final index = _users.indexWhere((u) => u.id == userId);
+    if (index == -1) return false;
+
+    String selfieUrl = _users[index].selfieUrl;
+    String nicFrontUrl = _users[index].nicFrontUrl;
+    String nicBackUrl = _users[index].nicBackUrl;
+
+    if (_isFirebaseAvailable) {
+      try {
+        final storage = FirebaseStorage.instance;
+        final metadata = SettableMetadata(contentType: 'image/jpeg');
+
+        if (selfieFile != null) {
+          final compressed = await ImageCompressionService.compressImageFile(selfieFile, quality: 75);
+          final ref = storage.ref().child('verification/$userId/selfie.jpg');
+          final task = await ref.putFile(compressed ?? selfieFile, metadata);
+          selfieUrl = await task.ref.getDownloadURL();
+          debugPrint('Resubmitted selfie uploaded: $selfieUrl');
+        }
+        if (nicFrontFile != null) {
+          final compressed = await ImageCompressionService.compressImageFile(nicFrontFile, quality: 80);
+          final ref = storage.ref().child('verification/$userId/nic_front.jpg');
+          final task = await ref.putFile(compressed ?? nicFrontFile, metadata);
+          nicFrontUrl = await task.ref.getDownloadURL();
+          debugPrint('Resubmitted NIC front uploaded: $nicFrontUrl');
+        }
+        if (nicBackFile != null) {
+          final compressed = await ImageCompressionService.compressImageFile(nicBackFile, quality: 80);
+          final ref = storage.ref().child('verification/$userId/nic_back.jpg');
+          final task = await ref.putFile(compressed ?? nicBackFile, metadata);
+          nicBackUrl = await task.ref.getDownloadURL();
+          debugPrint('Resubmitted NIC back uploaded: $nicBackUrl');
+        }
+      } catch (e) {
+        debugPrint('Error uploading resubmitted verification documents: $e');
+      }
+    } else {
+      if (selfieFile != null) selfieUrl = selfieFile.path;
+      if (nicFrontFile != null) nicFrontUrl = nicFrontFile.path;
+      if (nicBackFile != null) nicBackUrl = nicBackFile.path;
+    }
+
+    final updated = _users[index].copyWith(
+      selfieUrl: selfieUrl,
+      nicFrontUrl: nicFrontUrl,
+      nicBackUrl: nicBackUrl,
+      status: 'pending',
+      rejectionReason: null,
+      updatedAt: DateTime.now(),
+    );
+
+    return await updateProfile(updated);
+  }
+
   // ==================== PROFILE MANAGEMENT ====================
 
   /// Update user profile details
@@ -617,9 +683,10 @@ class BackendService extends ChangeNotifier {
       if (_isFirebaseAvailable) {
         try {
           final filename = 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
-          final ref = FirebaseStorage.instance.ref().child('users/$userId/photos/$filename');
-          await ref.putFile(File(finalPath));
-          final downloadUrl = await ref.getDownloadURL();
+          final ref = FirebaseStorage.instance.ref().child('profile_photos/$userId/$filename');
+          final metadata = SettableMetadata(contentType: 'image/jpeg');
+          final task = await ref.putFile(File(finalPath), metadata);
+          final downloadUrl = await task.ref.getDownloadURL();
           currentPhotos.add(downloadUrl);
         } catch (e) {
           debugPrint('Firebase storage photo upload error: $e');

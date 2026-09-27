@@ -78,16 +78,15 @@ class _VerificationStatusScreenState extends State<VerificationStatusScreen> {
     setState(() => _isResubmitting = true);
 
     final backend = BackendService();
-    final updated = _user.copyWith(
-      selfieUrl: _newSelfie?.path ?? _user.selfieUrl,
-      nicFrontUrl: _newNicFront?.path ?? _user.nicFrontUrl,
-      nicBackUrl: _newNicBack?.path ?? _user.nicBackUrl,
-      status: 'pending',
-      rejectionReason: null,
-      updatedAt: DateTime.now(),
+    await backend.resubmitVerificationDocuments(
+      userId: _user.id,
+      selfieFile: _newSelfie,
+      nicFrontFile: _newNicFront,
+      nicBackFile: _newNicBack,
     );
 
-    await backend.updateProfile(updated);
+    // Refresh local user state
+    final updated = backend.currentUser ?? _user;
 
     setState(() {
       _user = updated;

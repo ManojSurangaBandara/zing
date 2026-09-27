@@ -16,7 +16,7 @@ class MockData {
     district: 'Colombo',
     town: 'Colombo 07 - Cinnamon Gardens',
     bio: 'Official Super Admin for zing.lk moderation & identity verification.',
-    role: 'super_admin',
+    role: 'admin',
     status: 'approved',
     photos: const [],
     selfieUrl: '',
