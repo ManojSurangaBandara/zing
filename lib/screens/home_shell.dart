@@ -27,134 +27,142 @@ class _HomeShellState extends State<HomeShell> {
 
   void _showNotificationSheet() {
     final backend = BackendService();
-    final notifs = backend.getNotifications();
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setSheetState) => Container(
-          height: MediaQuery.of(ctx).size.height * 0.7,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Notifications 🔔',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
+        builder: (context, setSheetState) {
+          final notifs = backend.getNotifications();
+          final hasUnread = notifs.any((n) => !n.isRead);
+
+          return Container(
+            height: MediaQuery.of(ctx).size.height * 0.7,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
                   ),
-                  if (notifs.isNotEmpty)
-                    TextButton(
-                      onPressed: () {
-                        for (final n in notifs) {
-                          backend.markNotificationRead(n.id);
-                        }
-                        setSheetState(() {});
-                        setState(() {});
-                      },
-                      child: const Text('Mark all read'),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Notifications 🔔',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
                     ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Expanded(
-                child: notifs.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.notifications_none_rounded, size: 54, color: Colors.grey.shade400),
-                            const SizedBox(height: 12),
-                            const Text('No notifications yet', style: TextStyle(color: AppTheme.textSecondary)),
-                          ],
-                        ),
-                      )
-                    : ListView.separated(
-                        itemCount: notifs.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final n = notifs[index];
-                          return ListTile(
-                            contentPadding: const EdgeInsets.symmetric(vertical: 6),
-                            leading: Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: n.type.contains('approved')
-                                    ? AppTheme.success.withOpacity(0.12)
-                                    : n.type.contains('rejected')
-                                        ? AppTheme.error.withOpacity(0.12)
-                                        : AppTheme.primary.withOpacity(0.12),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                n.type.contains('approved')
-                                    ? Icons.verified
-                                    : n.type.contains('rejected')
-                                        ? Icons.error_outline
-                                        : Icons.favorite,
-                                color: n.type.contains('approved')
-                                    ? AppTheme.success
-                                    : n.type.contains('rejected')
-                                        ? AppTheme.error
-                                        : AppTheme.primary,
-                                size: 20,
-                              ),
-                            ),
-                            title: Text(
-                              n.title,
-                              style: TextStyle(
-                                fontWeight: n.isRead ? FontWeight.w600 : FontWeight.w800,
-                                fontSize: 14.5,
-                              ),
-                            ),
-                            subtitle: Text(
-                              n.body,
-                              style: const TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
-                            ),
-                            trailing: !n.isRead
-                                ? Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: const BoxDecoration(
-                                      color: AppTheme.primary,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  )
-                                : null,
-                            onTap: () {
-                              backend.markNotificationRead(n.id);
-                              setSheetState(() {});
-                              setState(() {});
-                              Navigator.pop(ctx);
-                              if (n.type == 'connect_request') {
-                                setState(() => _currentIndex = 1);
-                              } else if (n.type == 'connect_accepted') {
-                                setState(() => _currentIndex = 2);
-                              }
-                            },
-                          );
+                    if (hasUnread)
+                      TextButton(
+                        onPressed: () async {
+                          await backend.markAllNotificationsRead();
+                          setSheetState(() {});
+                          if (mounted) setState(() {});
                         },
+                        child: const Text('Mark all read'),
                       ),
-              ),
-            ],
-          ),
-        ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: notifs.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.notifications_none_rounded, size: 54, color: Colors.grey.shade400),
+                              const SizedBox(height: 12),
+                              const Text('No notifications yet', style: TextStyle(color: AppTheme.textSecondary)),
+                            ],
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: notifs.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final n = notifs[index];
+                            return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                              leading: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: n.type.contains('approved')
+                                      ? AppTheme.success.withValues(alpha: 0.12)
+                                      : n.type.contains('rejected')
+                                          ? AppTheme.error.withValues(alpha: 0.12)
+                                          : AppTheme.primary.withValues(alpha: 0.12),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  n.type.contains('approved')
+                                      ? Icons.verified
+                                      : n.type.contains('rejected')
+                                          ? Icons.error_outline
+                                          : Icons.favorite,
+                                  color: n.type.contains('approved')
+                                      ? AppTheme.success
+                                      : n.type.contains('rejected')
+                                          ? AppTheme.error
+                                          : AppTheme.primary,
+                                  size: 20,
+                                ),
+                              ),
+                              title: Text(
+                                n.title,
+                                style: TextStyle(
+                                  fontWeight: n.isRead ? FontWeight.w600 : FontWeight.w800,
+                                  fontSize: 14.5,
+                                ),
+                              ),
+                              subtitle: Text(
+                                n.body,
+                                style: const TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
+                              ),
+                              trailing: !n.isRead
+                                  ? Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: const BoxDecoration(
+                                        color: AppTheme.primary,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    )
+                                  : null,
+                              onTap: () async {
+                                await backend.markNotificationRead(n.id);
+                                if (context.mounted) {
+                                  setSheetState(() {});
+                                }
+                                if (mounted) {
+                                  setState(() {});
+                                }
+                                if (ctx.mounted) {
+                                  Navigator.pop(ctx);
+                                }
+                                if (n.type == 'connect_request') {
+                                  setState(() => _currentIndex = 1);
+                                } else if (n.type == 'connect_accepted') {
+                                  setState(() => _currentIndex = 2);
+                                }
+                              },
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

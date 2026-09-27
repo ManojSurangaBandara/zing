@@ -35,30 +35,61 @@ class ZingApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: BackendService(),
-      builder: (context, _) {
-        final backend = BackendService();
-        final user = backend.currentUser;
-
-        Widget initialHome;
-        if (user == null) {
-          initialHome = const WelcomeScreen();
-        } else if (user.isSuperAdmin) {
-          initialHome = const SuperAdminScreen();
-        } else if (user.isApproved) {
-          initialHome = const HomeShell();
-        } else {
-          initialHome = VerificationStatusScreen(user: user);
-        }
-
-        return MaterialApp(
-          title: 'zing.lk',
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.lightTheme,
-          home: initialHome,
-        );
-      },
+    return MaterialApp(
+      title: 'zing.lk',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.lightTheme,
+      home: const _AuthGate(),
     );
+  }
+}
+
+class _AuthGate extends StatefulWidget {
+  const _AuthGate();
+
+  @override
+  State<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<_AuthGate> {
+  String? _lastUserKey;
+
+  @override
+  void initState() {
+    super.initState();
+    final user = BackendService().currentUser;
+    _lastUserKey = user == null ? 'none' : '${user.id}_${user.status}_${user.role}';
+    BackendService().addListener(_handleAuthChange);
+  }
+
+  @override
+  void dispose() {
+    BackendService().removeListener(_handleAuthChange);
+    super.dispose();
+  }
+
+  void _handleAuthChange() {
+    final user = BackendService().currentUser;
+    final newKey = user == null ? 'none' : '${user.id}_${user.status}_${user.role}';
+    if (newKey != _lastUserKey) {
+      _lastUserKey = newKey;
+      if (mounted) setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final backend = BackendService();
+    final user = backend.currentUser;
+
+    if (user == null) {
+      return const WelcomeScreen();
+    } else if (user.isSuperAdmin) {
+      return const SuperAdminScreen();
+    } else if (user.isApproved) {
+      return const HomeShell();
+    } else {
+      return VerificationStatusScreen(user: user);
+    }
   }
 }

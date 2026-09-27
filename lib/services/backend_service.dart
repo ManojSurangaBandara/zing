@@ -197,6 +197,17 @@ class BackendService extends ChangeNotifier {
           _matches.add(MatchModel.fromMap(doc.data(), doc.id));
         } catch (_) {}
       }
+
+      // 4. Fetch notifications
+      try {
+        final notifDocs = await firestore.collection('notifications').get();
+        _notifications.clear();
+        for (final doc in notifDocs.docs) {
+          try {
+            _notifications.add(AppNotificationModel.fromMap(doc.data(), doc.id));
+          } catch (_) {}
+        }
+      } catch (_) {}
     } catch (e) {
       debugPrint('Error syncing from Firebase: $e');
     }
@@ -1024,28 +1035,54 @@ class BackendService extends ChangeNotifier {
     return _notifications.where((n) => n.userId == _currentUser!.id && !n.isRead).length;
   }
 
-  void markNotificationRead(String id) {
+  Future<void> markNotificationRead(String id) async {
     final index = _notifications.indexWhere((n) => n.id == id);
-    if (index != -1) {
-      final notif = _notifications[index];
-      _notifications[index] = AppNotificationModel(
-        id: notif.id,
-        userId: notif.userId,
-        title: notif.title,
-        body: notif.body,
-        type: notif.type,
-        data: notif.data,
-        createdAt: notif.createdAt,
-        isRead: true,
-      );
+    if (index != -1 && !_notifications[index].isRead) {
+      _notifications[index] = _notifications[index].copyWith(isRead: true);
+      notifyListeners();
 
       if (_isFirebaseAvailable) {
         try {
-          FirebaseFirestore.instance.collection('notifications').doc(id).update({'isRead': true});
-        } catch (_) {}
+          await FirebaseFirestore.instance
+              .collection('notifications')
+              .doc(id)
+              .set({'isRead': true}, SetOptions(merge: true));
+        } catch (e) {
+          debugPrint('Error marking notification read in Firestore: $e');
+        }
       }
+    }
+  }
 
-      notifyListeners();
+  Future<void> markAllNotificationsRead() async {
+    if (_currentUser == null) return;
+    bool hasChanges = false;
+    final List<String> updatedIds = [];
+
+    for (int i = 0; i < _notifications.length; i++) {
+      if (_notifications[i].userId == _currentUser!.id && !_notifications[i].isRead) {
+        _notifications[i] = _notifications[i].copyWith(isRead: true);
+        hasChanges = true;
+        updatedIds.add(_notifications[i].id);
+      }
+    }
+
+    if (!hasChanges) return;
+
+    // Immediately notify UI so the badge and list update without delay
+    notifyListeners();
+
+    if (_isFirebaseAvailable && updatedIds.isNotEmpty) {
+      try {
+        final batch = FirebaseFirestore.instance.batch();
+        for (final id in updatedIds) {
+          final docRef = FirebaseFirestore.instance.collection('notifications').doc(id);
+          batch.set(docRef, {'isRead': true}, SetOptions(merge: true));
+        }
+        await batch.commit();
+      } catch (e) {
+        debugPrint('Error committing batch mark all notifications read: $e');
+      }
     }
   }
 }

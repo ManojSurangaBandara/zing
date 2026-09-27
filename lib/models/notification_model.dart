@@ -19,6 +19,28 @@ class AppNotificationModel {
     this.isRead = false,
   }) : createdAt = createdAt ?? DateTime.now();
 
+  AppNotificationModel copyWith({
+    String? id,
+    String? userId,
+    String? title,
+    String? body,
+    String? type,
+    Map<String, dynamic>? data,
+    DateTime? createdAt,
+    bool? isRead,
+  }) {
+    return AppNotificationModel(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      title: title ?? this.title,
+      body: body ?? this.body,
+      type: type ?? this.type,
+      data: data ?? this.data,
+      createdAt: createdAt ?? this.createdAt,
+      isRead: isRead ?? this.isRead,
+    );
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
