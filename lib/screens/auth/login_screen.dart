@@ -169,23 +169,23 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 36),
 
-                // Quick test accounts bar
+                // Super Admin quick login helper
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: AppTheme.border),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Row(
                         children: [
-                          Icon(Icons.touch_app_rounded, color: AppTheme.primary, size: 18),
+                          Icon(Icons.admin_panel_settings_rounded, color: Color(0xFF6366F1), size: 20),
                           SizedBox(width: 8),
                           Text(
-                            'Quick Autofill for Testing:',
+                            'Super Admin Access',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
@@ -194,27 +194,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          ActionChip(
-                            avatar: const Icon(Icons.admin_panel_settings, size: 16, color: Color(0xFF6366F1)),
-                            label: const Text('Super Admin'),
-                            onPressed: () => _fillCredentials('admin@zing.lk', 'admin123'),
-                          ),
-                          ActionChip(
-                            avatar: const Icon(Icons.verified, size: 16, color: AppTheme.success),
-                            label: const Text('Dilini (Approved)'),
-                            onPressed: () => _fillCredentials('dilini.p@gmail.com', 'pass123'),
-                          ),
-                          ActionChip(
-                            avatar: const Icon(Icons.timer_outlined, size: 16, color: AppTheme.warning),
-                            label: const Text('Nuwan (Pending)'),
-                            onPressed: () => _fillCredentials('nuwan.k@gmail.com', 'pass123'),
-                          ),
-                        ],
+                      TextButton(
+                        onPressed: () => _fillCredentials('admin@zing.lk', 'admin123'),
+                        child: const Text('Autofill Admin', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF6366F1))),
                       ),
                     ],
                   ),

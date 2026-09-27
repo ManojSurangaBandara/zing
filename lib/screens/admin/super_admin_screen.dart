@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../constants/app_theme.dart';
 import '../../models/user_model.dart';
 import '../../services/backend_service.dart';
-import '../home_shell.dart';
 import '../auth/welcome_screen.dart';
 
 class SuperAdminScreen extends StatefulWidget {
@@ -277,17 +276,6 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> with SingleTickerPr
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.swap_horiz_rounded, color: Colors.white),
-            tooltip: 'Switch to User View',
-            onPressed: () {
-              backend.switchDemoUser('user_001');
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const HomeShell()),
-              );
-            },
-          ),
           IconButton(
             icon: const Icon(Icons.logout_rounded, color: Colors.white),
             tooltip: 'Log Out',

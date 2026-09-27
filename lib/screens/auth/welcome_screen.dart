@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../constants/app_theme.dart';
-import '../../services/backend_service.dart';
 import 'login_screen.dart';
 import 'register_screen.dart';
-import '../home_shell.dart';
-import '../admin/super_admin_screen.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -33,7 +30,7 @@ class WelcomeScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
               child: Column(
                 children: [
-                  const Spacer(flex: 1),
+                  const Spacer(flex: 2),
                   // App Icon / Logo
                   Container(
                     width: 100,
@@ -122,7 +119,7 @@ class WelcomeScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const Spacer(flex: 2),
+                  const Spacer(flex: 3),
 
                   // Action Buttons
                   ElevatedButton(
@@ -158,124 +155,12 @@ class WelcomeScreen extends StatelessWidget {
                     ),
                     child: const Text('Log In with Email'),
                   ),
-                  const SizedBox(height: 24),
-
-                  // Quick Demo Switcher Card for instant testing
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.95),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTheme.border),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.flash_on_rounded, color: AppTheme.gold, size: 18),
-                            SizedBox(width: 6),
-                            Text(
-                              'Quick Demo Testing Shortcuts',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: AppTheme.textPrimary,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _DemoButton(
-                                label: 'Super Admin',
-                                icon: Icons.admin_panel_settings_rounded,
-                                color: const Color(0xFF6366F1),
-                                onTap: () {
-                                  BackendService().switchDemoUser('admin_001');
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(builder: (_) => const SuperAdminScreen()),
-                                  );
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _DemoButton(
-                                label: 'Verified User',
-                                icon: Icons.check_circle_rounded,
-                                color: AppTheme.success,
-                                onTap: () {
-                                  BackendService().switchDemoUser('user_001');
-                                  Navigator.pushReplacement(
-                                    context,
-                                    MaterialPageRoute(builder: (_) => const HomeShell()),
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _DemoButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _DemoButton({
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 16),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: color,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -10,6 +10,7 @@ import '../models/user_model.dart';
 import '../models/connect_request_model.dart';
 import '../models/message_model.dart';
 import '../models/notification_model.dart';
+import '../firebase_options.dart';
 import 'image_compression_service.dart';
 import 'location_service.dart';
 import 'mock_data.dart';
@@ -28,7 +29,7 @@ class BackendService extends ChangeNotifier {
   UserModel? get currentUser => _currentUser;
   bool get isAuthenticated => _currentUser != null;
 
-  // In-Memory Database for Mock/Fallback & testing
+  // In-Memory Database (Stores Super Admin and registered users)
   final List<UserModel> _users = [];
   final List<ConnectRequestModel> _requests = [];
   final List<MatchModel> _matches = [];
@@ -37,52 +38,171 @@ class BackendService extends ChangeNotifier {
 
   Future<void> initialize() async {
     try {
-      if (Firebase.apps.isNotEmpty) {
-        _isFirebaseAvailable = true;
-      } else {
-        // Try initializing default app if google-services is available
-        await Firebase.initializeApp();
-        _isFirebaseAvailable = true;
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
       }
+      _isFirebaseAvailable = true;
       debugPrint('Firebase initialized successfully: $_isFirebaseAvailable');
     } catch (e) {
-      debugPrint('Firebase not configured or failed to initialize, using local persistent engine: $e');
+      debugPrint('Firebase not configured or failed to initialize, running local engine: $e');
       _isFirebaseAvailable = false;
     }
 
-    _loadInitialMockData();
+    _users.clear();
+    _requests.clear();
+    _matches.clear();
+    _messages.clear();
+    _notifications.clear();
 
-    // Default to approved user Dilini so the app launches ready to use immediately
-    _currentUser = _users.firstWhere((u) => u.id == 'user_001', orElse: () => _users.first);
+    // Ensure Super Admin is always registered in the system and created in Firebase
+    await _ensureSuperAdminInFirebase();
+
+    // If Firebase is available, sync real users and check active session
+    if (_isFirebaseAvailable) {
+      await _syncFromFirebase();
+
+      final fbUser = FirebaseAuth.instance.currentUser;
+      if (fbUser != null) {
+        final existing = _users.where((u) => u.id == fbUser.uid || u.email.toLowerCase() == fbUser.email?.toLowerCase());
+        if (existing.isNotEmpty) {
+          _currentUser = existing.first;
+        } else {
+          _currentUser = null;
+        }
+      } else {
+        _currentUser = null;
+      }
+    } else {
+      _currentUser = null;
+    }
+
     notifyListeners();
   }
 
-  void _loadInitialMockData() {
-    _users.clear();
-    _users.add(MockData.superAdmin);
-    _users.addAll(MockData.initialUsers);
+  /// Automatically creates and configures the Super Admin account in Firebase Auth and Firestore
+  Future<void> _ensureSuperAdminInFirebase() async {
+    // Add super admin to local list
+    if (!_users.any((u) => u.email == MockData.adminEmail)) {
+      _users.add(MockData.superAdmin);
+    }
 
-    _requests.clear();
-    _requests.addAll(MockData.initialRequests);
+    if (!_isFirebaseAvailable) return;
 
-    _matches.clear();
-    _matches.addAll(MockData.initialMatches);
+    try {
+      final auth = FirebaseAuth.instance;
+      final firestore = FirebaseFirestore.instance;
 
-    _messages.clear();
-    _messages.addAll(MockData.initialMessages);
+      String adminUid = MockData.adminId;
 
-    _notifications.clear();
-    _notifications.addAll(MockData.initialNotifications);
+      // 1. Try creating or verifying Super Admin in Firebase Auth
+      try {
+        final credential = await auth.createUserWithEmailAndPassword(
+          email: MockData.adminEmail,
+          password: MockData.adminDefaultPassword,
+        );
+        adminUid = credential.user?.uid ?? MockData.adminId;
+        debugPrint('Super Admin user created in Firebase Auth: $adminUid');
+      } on FirebaseAuthException catch (authErr) {
+        if (authErr.code == 'email-already-in-use') {
+          debugPrint('Super Admin email already registered in Firebase Auth.');
+          try {
+            // Check if we can sign in or retrieve UID
+            final signInRes = await auth.signInWithEmailAndPassword(
+              email: MockData.adminEmail,
+              password: MockData.adminDefaultPassword,
+            );
+            adminUid = signInRes.user?.uid ?? MockData.adminId;
+          } catch (_) {
+            // Could have a custom password; query Firestore by email
+            final query = await firestore
+                .collection('users')
+                .where('email', isEqualTo: MockData.adminEmail)
+                .limit(1)
+                .get();
+            if (query.docs.isNotEmpty) {
+              adminUid = query.docs.first.id;
+            }
+          }
+        } else {
+          debugPrint('Firebase Auth Super Admin initialization notice: $authErr');
+        }
+      }
+
+      // 2. Ensure Super Admin document exists in Firestore
+      final adminDoc = await firestore.collection('users').doc(adminUid).get();
+      if (!adminDoc.exists) {
+        final superAdminUser = MockData.superAdmin.copyWith(id: adminUid);
+        await firestore.collection('users').doc(adminUid).set(superAdminUser.toMap(), SetOptions(merge: true));
+        debugPrint('Created Super Admin document in Firestore: $adminUid');
+
+        // Update in-memory reference
+        final idx = _users.indexWhere((u) => u.email == MockData.adminEmail);
+        if (idx != -1) {
+          _users[idx] = superAdminUser;
+        }
+      } else {
+        final existingAdmin = UserModel.fromMap(adminDoc.data()!, adminDoc.id);
+        final idx = _users.indexWhere((u) => u.email == MockData.adminEmail);
+        if (idx != -1) {
+          _users[idx] = existingAdmin;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error ensuring Super Admin in Firebase: $e');
+    }
+  }
+
+  /// Sync real users, requests, and matches from Cloud Firestore
+  Future<void> _syncFromFirebase() async {
+    try {
+      final firestore = FirebaseFirestore.instance;
+
+      // 1. Fetch real users from Firestore
+      final userDocs = await firestore.collection('users').get();
+      for (final doc in userDocs.docs) {
+        try {
+          final user = UserModel.fromMap(doc.data(), doc.id);
+          final idx = _users.indexWhere((u) => u.id == user.id);
+          if (idx != -1) {
+            _users[idx] = user;
+          } else {
+            _users.add(user);
+          }
+        } catch (e) {
+          debugPrint('Error parsing user doc ${doc.id}: $e');
+        }
+      }
+
+      // Ensure Super Admin remains
+      if (!_users.any((u) => u.email == MockData.adminEmail)) {
+        _users.add(MockData.superAdmin);
+      }
+
+      // 2. Fetch requests
+      final reqDocs = await firestore.collection('connect_requests').get();
+      _requests.clear();
+      for (final doc in reqDocs.docs) {
+        try {
+          _requests.add(ConnectRequestModel.fromMap(doc.data(), doc.id));
+        } catch (_) {}
+      }
+
+      // 3. Fetch matches
+      final matchDocs = await firestore.collection('matches').get();
+      _matches.clear();
+      for (final doc in matchDocs.docs) {
+        try {
+          _matches.add(MatchModel.fromMap(doc.data(), doc.id));
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('Error syncing from Firebase: $e');
+    }
   }
 
   // ==================== AUTH & REGISTRATION ====================
-
-  /// Quick switcher for testing & demo purposes
-  void switchDemoUser(String userId) {
-    final user = _users.firstWhere((u) => u.id == userId, orElse: () => _users.first);
-    _currentUser = user;
-    notifyListeners();
-  }
 
   /// Register new user profile with manual verification documents
   Future<({bool success, String message, UserModel? user})> registerWithVerification({
@@ -103,7 +223,7 @@ class BackendService extends ChangeNotifier {
     double? longitude,
   }) async {
     try {
-      // 1. Compress verification documents first!
+      // 1. Compress verification documents before upload
       debugPrint('Compressing verification documents before upload...');
       final compressedSelfie = await ImageCompressionService.compressImageFile(selfieFile, quality: 75);
       final compressedNicFront = await ImageCompressionService.compressImageFile(nicFrontFile, quality: 80);
@@ -113,22 +233,21 @@ class BackendService extends ChangeNotifier {
       String nicFrontUrl = compressedNicFront?.path ?? nicFrontFile.path;
       String nicBackUrl = compressedNicBack?.path ?? nicBackFile.path;
 
-      final newUserId = _uuid.v4();
+      String newUserId = _uuid.v4();
 
-      // If Firebase is available, handle auth and storage
+      // If Firebase is available, create account in Firebase Auth and upload to Storage
       if (_isFirebaseAvailable) {
         try {
           final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-            email: email,
-            password: password,
+            email: email.trim(),
+            password: password.trim(),
           );
-          final uid = userCredential.user?.uid ?? newUserId;
+          newUserId = userCredential.user?.uid ?? newUserId;
 
-          // Upload compressed files to Firebase Storage
           final storage = FirebaseStorage.instance;
-          final selfieRef = storage.ref().child('verifications/$uid/selfie.jpg');
-          final nicFrontRef = storage.ref().child('verifications/$uid/nic_front.jpg');
-          final nicBackRef = storage.ref().child('verifications/$uid/nic_back.jpg');
+          final selfieRef = storage.ref().child('verifications/$newUserId/selfie.jpg');
+          final nicFrontRef = storage.ref().child('verifications/$newUserId/nic_front.jpg');
+          final nicBackRef = storage.ref().child('verifications/$newUserId/nic_back.jpg');
 
           if (compressedSelfie != null) {
             await selfieRef.putFile(compressedSelfie);
@@ -143,25 +262,25 @@ class BackendService extends ChangeNotifier {
             nicBackUrl = await nicBackRef.getDownloadURL();
           }
         } catch (firebaseErr) {
-          debugPrint('Firebase registration error, saving to database: $firebaseErr');
+          debugPrint('Firebase registration upload notice: $firebaseErr');
         }
       }
 
-      // Default coords for district if GPS not provided
+      // Coordinates
       final coords = LocationService.getDistrictCoordinates(district);
 
       final newUser = UserModel(
         id: newUserId,
-        email: email,
-        name: name,
+        email: email.trim(),
+        name: name.trim(),
         age: age,
         gender: gender,
         preference: preference,
         district: district,
-        town: town,
-        bio: bio,
+        town: town.trim(),
+        bio: bio.trim(),
         interests: interests,
-        photos: [selfieUrl], // Add selfie as first photo initially
+        photos: [selfieUrl],
         selfieUrl: selfieUrl,
         nicFrontUrl: nicFrontUrl,
         nicBackUrl: nicBackUrl,
@@ -181,21 +300,27 @@ class BackendService extends ChangeNotifier {
         }
       }
 
-      // Automatically add notification for user
-      _notifications.add(AppNotificationModel(
+      final notif = AppNotificationModel(
         id: _uuid.v4(),
         userId: newUser.id,
         title: 'Application Submitted 📝',
-        body: 'Your identity documents are under review by the zing.lk admin team. You will be notified once verified.',
+        body: 'Your identity documents are under review by the zing.lk Super Admin. You will be notified once verified.',
         type: 'verification_pending',
-      ));
+      );
+      _notifications.add(notif);
+
+      if (_isFirebaseAvailable) {
+        try {
+          await FirebaseFirestore.instance.collection('notifications').doc(notif.id).set(notif.toMap());
+        } catch (_) {}
+      }
 
       _currentUser = newUser;
       notifyListeners();
 
       return (
         success: true,
-        message: 'Registration successful! Your profile has been submitted for manual admin verification.',
+        message: 'Registration submitted! Your profile is pending manual Super Admin verification.',
         user: newUser,
       );
     } catch (e) {
@@ -208,46 +333,122 @@ class BackendService extends ChangeNotifier {
     }
   }
 
-  /// Sign In with Email and Password
+  /// Sign In with Email and Password (Firebase Auth + Firestore)
   Future<({bool success, String message, UserModel? user})> login({
     required String email,
     required String password,
   }) async {
-    try {
-      // Find matching user
-      final user = _users.firstWhere(
-        (u) => u.email.toLowerCase().trim() == email.toLowerCase().trim(),
-        orElse: () => throw Exception('No account found with this email.'),
-      );
+    final cleanEmail = email.trim().toLowerCase();
+    final cleanPassword = password.trim();
 
-      // Check verification status
-      if (user.role != 'super_admin') {
-        if (user.status == 'pending') {
-          _currentUser = user;
-          notifyListeners();
-          return (
-            success: false,
-            message: 'Your account verification is currently under review by our admin team. Please check back shortly.',
-            user: user,
+    try {
+      // 1. Authenticate with Firebase Auth if available
+      if (_isFirebaseAvailable) {
+        try {
+          final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+            email: cleanEmail,
+            password: cleanPassword,
           );
-        } else if (user.status == 'rejected') {
-          _currentUser = user;
+          final uid = credential.user?.uid;
+          if (uid != null) {
+            final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+            if (doc.exists && doc.data() != null) {
+              final user = UserModel.fromMap(doc.data()!, doc.id);
+
+              if (user.role != 'super_admin') {
+                if (user.status == 'pending') {
+                  _currentUser = user;
+                  notifyListeners();
+                  return (
+                    success: false,
+                    message: 'Your account verification is currently under review by our admin team.',
+                    user: user,
+                  );
+                } else if (user.status == 'rejected') {
+                  _currentUser = user;
+                  notifyListeners();
+                  return (
+                    success: false,
+                    message: 'Verification rejected: ${user.rejectionReason ?? "Identity could not be verified."}',
+                    user: user,
+                  );
+                }
+              }
+
+              _currentUser = user;
+              notifyListeners();
+              return (
+                success: true,
+                message: 'Welcome back, ${user.name}!',
+                user: user,
+              );
+            }
+          }
+        } on FirebaseAuthException catch (authErr) {
+          debugPrint('Firebase signIn error: ${authErr.code} - ${authErr.message}');
+          // If not admin account, return the auth error
+          if (cleanEmail != MockData.adminEmail.toLowerCase()) {
+            return (
+              success: false,
+              message: authErr.message ?? 'Invalid email or password.',
+              user: null,
+            );
+          }
+        }
+      }
+
+      // 2. Super Admin fallback check
+      if (cleanEmail == MockData.adminEmail.toLowerCase()) {
+        if (cleanPassword == 'admin123' || cleanPassword == MockData.adminDefaultPassword) {
+          _currentUser = MockData.superAdmin;
           notifyListeners();
           return (
+            success: true,
+            message: 'Welcome Super Admin!',
+            user: MockData.superAdmin,
+          );
+        } else {
+          return (
             success: false,
-            message: 'Verification rejected: ${user.rejectionReason ?? "Identity could not be verified."}',
-            user: user,
+            message: 'Incorrect password for Super Admin.',
+            user: null,
           );
         }
       }
 
-      _currentUser = user;
+      // 3. In-memory check (for users registered locally during offline run)
+      final localUser = _users.firstWhere(
+        (u) => u.email.toLowerCase() == cleanEmail,
+        orElse: () => throw Exception('No account found with this email.'),
+      );
+
+      if (localUser.role != 'super_admin') {
+        if (localUser.status == 'pending') {
+          _currentUser = localUser;
+          notifyListeners();
+          return (
+            success: false,
+            message: 'Your account verification is currently under review by our admin team.',
+            user: localUser,
+          );
+        } else if (localUser.status == 'rejected') {
+          _currentUser = localUser;
+          notifyListeners();
+          return (
+            success: false,
+            message: 'Verification rejected: ${localUser.rejectionReason ?? "Identity could not be verified."}',
+            user: localUser,
+          );
+        }
+      }
+
+      _currentUser = localUser;
       notifyListeners();
 
       return (
         success: true,
-        message: 'Welcome back, ${user.name}!',
-        user: user,
+        message: 'Welcome back, ${localUser.name}!',
+        user: localUser,
       );
     } catch (e) {
       return (
@@ -258,7 +459,14 @@ class BackendService extends ChangeNotifier {
     }
   }
 
-  void logout() {
+  Future<void> logout() async {
+    if (_isFirebaseAvailable) {
+      try {
+        await FirebaseAuth.instance.signOut();
+      } catch (e) {
+        debugPrint('Firebase signout error: $e');
+      }
+    }
     _currentUser = null;
     notifyListeners();
   }
@@ -291,14 +499,14 @@ class BackendService extends ChangeNotifier {
       );
       _users[index] = updatedUser;
 
-      // Add approval notification
-      _notifications.add(AppNotificationModel(
+      final notif = AppNotificationModel(
         id: _uuid.v4(),
         userId: userId,
         title: 'Account Verified! 🌟',
-        body: 'Congratulations! Your zing.lk profile has been verified and approved. You can now connect and chat with matches!',
+        body: 'Congratulations! Your zing.lk profile has been verified and approved by the Super Admin.',
         type: 'verification_approved',
-      ));
+      );
+      _notifications.add(notif);
 
       if (_currentUser?.id == userId) {
         _currentUser = updatedUser;
@@ -311,6 +519,7 @@ class BackendService extends ChangeNotifier {
             'rejectionReason': null,
             'updatedAt': DateTime.now().toIso8601String(),
           });
+          await FirebaseFirestore.instance.collection('notifications').doc(notif.id).set(notif.toMap());
         } catch (e) {
           debugPrint('Firestore approve update error: $e');
         }
@@ -333,14 +542,14 @@ class BackendService extends ChangeNotifier {
       );
       _users[index] = updatedUser;
 
-      // Add rejection notification
-      _notifications.add(AppNotificationModel(
+      final notif = AppNotificationModel(
         id: _uuid.v4(),
         userId: userId,
         title: 'Verification Update ⚠️',
         body: 'Your profile verification was declined: $reason. Please re-submit clear documents.',
         type: 'verification_rejected',
-      ));
+      );
+      _notifications.add(notif);
 
       if (_currentUser?.id == userId) {
         _currentUser = updatedUser;
@@ -353,6 +562,7 @@ class BackendService extends ChangeNotifier {
             'rejectionReason': reason,
             'updatedAt': DateTime.now().toIso8601String(),
           });
+          await FirebaseFirestore.instance.collection('notifications').doc(notif.id).set(notif.toMap());
         } catch (e) {
           debugPrint('Firestore reject update error: $e');
         }
@@ -389,7 +599,7 @@ class BackendService extends ChangeNotifier {
     return false;
   }
 
-  /// Upload up to 10 photos, compressing each before saving
+  /// Upload up to 10 photos, compressing each before uploading to Firebase
   Future<List<String>> uploadProfilePhotos(String userId, List<File> newPhotoFiles) async {
     final index = _users.indexWhere((u) => u.id == userId);
     if (index == -1) return [];
@@ -401,7 +611,6 @@ class BackendService extends ChangeNotifier {
     final filesToProcess = newPhotoFiles.take(remainingSlots);
 
     for (final file in filesToProcess) {
-      // Compress each photo before upload
       final compressed = await ImageCompressionService.compressImageFile(file, quality: 75);
       final finalPath = compressed?.path ?? file.path;
 
@@ -431,6 +640,15 @@ class BackendService extends ChangeNotifier {
       _currentUser = updatedUser;
     }
 
+    if (_isFirebaseAvailable) {
+      try {
+        await FirebaseFirestore.instance.collection('users').doc(userId).update({
+          'photos': currentPhotos,
+          'updatedAt': DateTime.now().toIso8601String(),
+        });
+      } catch (_) {}
+    }
+
     notifyListeners();
     return currentPhotos;
   }
@@ -448,13 +666,22 @@ class BackendService extends ChangeNotifier {
       if (_currentUser?.id == userId) {
         _currentUser = updatedUser;
       }
+
+      if (_isFirebaseAvailable) {
+        try {
+          await FirebaseFirestore.instance.collection('users').doc(userId).update({
+            'photos': currentPhotos,
+          });
+        } catch (_) {}
+      }
+
       notifyListeners();
     }
   }
 
   // ==================== DISCOVERY & SEARCH FILTER ====================
 
-  /// Search and filter other approved profiles
+  /// Search and filter other approved profiles (real registered profiles only)
   List<UserModel> getDiscoverProfiles({
     String? district,
     String? town,
@@ -469,33 +696,28 @@ class BackendService extends ChangeNotifier {
     final currentLng = _currentUser!.longitude ?? 79.8612;
 
     return _users.where((user) {
-      // Must be approved and not the current user, and not admin
       if (user.id == currentId || user.status != 'approved' || user.role == 'super_admin') {
         return false;
       }
 
-      // Gender preference filter
       final pref = genderPreference ?? _currentUser!.preference;
       if (pref != 'Everyone') {
         if (pref == 'Men' && user.gender != 'Male') return false;
         if (pref == 'Women' && user.gender != 'Female') return false;
       }
 
-      // District filter
       if (district != null && district.isNotEmpty && district != 'All Districts') {
         if (user.district.toLowerCase() != district.toLowerCase()) {
           return false;
         }
       }
 
-      // Town filter
       if (town != null && town.isNotEmpty && town != 'All Towns') {
         if (!user.town.toLowerCase().contains(town.toLowerCase())) {
           return false;
         }
       }
 
-      // Radius filter (Distance in KM)
       if (maxRadiusKm != null && maxRadiusKm > 0) {
         final targetLat = user.latitude ?? 6.9271;
         final targetLng = user.longitude ?? 79.8612;
@@ -510,7 +732,6 @@ class BackendService extends ChangeNotifier {
         }
       }
 
-      // Search query (name, bio, interests)
       if (searchQuery != null && searchQuery.trim().isNotEmpty) {
         final query = searchQuery.toLowerCase().trim();
         final matchesName = user.name.toLowerCase().contains(query);
@@ -532,7 +753,6 @@ class BackendService extends ChangeNotifier {
   Future<({bool success, String message})> sendConnectRequest(String receiverId, {String? greeting}) async {
     if (_currentUser == null) return (success: false, message: 'Please log in first.');
 
-    // Check if already connected or request pending
     final existingRequest = _requests.firstWhere(
       (r) => (r.senderId == _currentUser!.id && r.receiverId == receiverId) ||
              (r.senderId == receiverId && r.receiverId == _currentUser!.id),
@@ -562,33 +782,37 @@ class BackendService extends ChangeNotifier {
 
     _requests.add(newRequest);
 
-    // Add notification for receiver
-    _notifications.add(AppNotificationModel(
+    final notif = AppNotificationModel(
       id: _uuid.v4(),
       userId: receiverId,
       title: 'New Connect Request ❤️',
-      body: '${_currentUser!.name} from ${_currentUser!.district} sent you a connect request.',
+      body: '${_currentUser!.name} sent you a connect request.',
       type: 'connect_request',
       data: {'senderId': _currentUser!.id, 'requestId': newRequest.id},
-    ));
+    );
+    _notifications.add(notif);
+
+    if (_isFirebaseAvailable) {
+      try {
+        await FirebaseFirestore.instance.collection('connect_requests').doc(newRequest.id).set(newRequest.toMap());
+        await FirebaseFirestore.instance.collection('notifications').doc(notif.id).set(notif.toMap());
+      } catch (_) {}
+    }
 
     notifyListeners();
     return (success: true, message: 'Connect request sent successfully!');
   }
 
-  /// Get pending requests received by current user
   List<ConnectRequestModel> getReceivedRequests() {
     if (_currentUser == null) return [];
     return _requests.where((r) => r.receiverId == _currentUser!.id && r.isPending).toList();
   }
 
-  /// Get requests sent by current user
   List<ConnectRequestModel> getSentRequests() {
     if (_currentUser == null) return [];
     return _requests.where((r) => r.senderId == _currentUser!.id).toList();
   }
 
-  /// Respond to a connect request (Accept or Decline)
   Future<bool> respondToConnectRequest(String requestId, {required bool accept}) async {
     final index = _requests.indexWhere((r) => r.id == requestId);
     if (index == -1) return false;
@@ -610,9 +834,14 @@ class BackendService extends ChangeNotifier {
       createdAt: request.createdAt,
     );
 
+    if (_isFirebaseAvailable) {
+      try {
+        await FirebaseFirestore.instance.collection('connect_requests').doc(requestId).update({'status': newStatus});
+      } catch (_) {}
+    }
+
     if (accept) {
-      // Create a match!
-      final sender = _users.firstWhere((u) => u.id == request.senderId);
+      final sender = _users.firstWhere((u) => u.id == request.senderId, orElse: () => _currentUser!);
       final receiver = _currentUser!;
 
       final matchId = 'match_${request.senderId}_${receiver.id}';
@@ -637,15 +866,22 @@ class BackendService extends ChangeNotifier {
 
       _matches.add(newMatch);
 
-      // Notify the sender that request was accepted
-      _notifications.add(AppNotificationModel(
+      final notif = AppNotificationModel(
         id: _uuid.v4(),
         userId: request.senderId,
         title: 'New Match! 🎉',
         body: '${receiver.name} accepted your connect request! Start a conversation now.',
         type: 'connect_accepted',
         data: {'matchId': matchId, 'userId': receiver.id},
-      ));
+      );
+      _notifications.add(notif);
+
+      if (_isFirebaseAvailable) {
+        try {
+          await FirebaseFirestore.instance.collection('matches').doc(matchId).set(newMatch.toMap());
+          await FirebaseFirestore.instance.collection('notifications').doc(notif.id).set(notif.toMap());
+        } catch (_) {}
+      }
     }
 
     notifyListeners();
@@ -654,19 +890,16 @@ class BackendService extends ChangeNotifier {
 
   // ==================== MATCHES & MESSAGING ====================
 
-  /// Get all active matches for current user
   List<MatchModel> getMatches() {
     if (_currentUser == null) return [];
     return _matches.where((m) => m.users.contains(_currentUser!.id)).toList();
   }
 
-  /// Get messages in a specific chat
   List<MessageModel> getChatMessages(String chatId) {
     return _messages.where((m) => m.chatId == chatId).toList()
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
   }
 
-  /// Send a real-time message
   Future<void> sendMessage({
     required String chatId,
     required String receiverId,
@@ -686,7 +919,6 @@ class BackendService extends ChangeNotifier {
 
     _messages.add(newMessage);
 
-    // Update match last message
     final matchIndex = _matches.indexWhere((m) => m.id == chatId);
     if (matchIndex != -1) {
       final match = _matches[matchIndex];
@@ -697,6 +929,16 @@ class BackendService extends ChangeNotifier {
         lastMessageTime: DateTime.now(),
         userDetails: match.userDetails,
       );
+    }
+
+    if (_isFirebaseAvailable) {
+      try {
+        await FirebaseFirestore.instance.collection('chats').doc(chatId).collection('messages').doc(newMessage.id).set(newMessage.toMap());
+        await FirebaseFirestore.instance.collection('matches').doc(chatId).update({
+          'lastMessage': text.trim(),
+          'lastMessageTime': DateTime.now().toIso8601String(),
+        });
+      } catch (_) {}
     }
 
     notifyListeners();
@@ -729,6 +971,13 @@ class BackendService extends ChangeNotifier {
         createdAt: notif.createdAt,
         isRead: true,
       );
+
+      if (_isFirebaseAvailable) {
+        try {
+          FirebaseFirestore.instance.collection('notifications').doc(id).update({'isRead': true});
+        } catch (_) {}
+      }
+
       notifyListeners();
     }
   }

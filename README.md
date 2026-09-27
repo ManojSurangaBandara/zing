@@ -46,15 +46,18 @@ Designed specifically for Sri Lanka with manual Super Admin verification (Selfie
 
 ---
 
-## 🚀 Quick Testing & Demo Shortcuts
+## 👑 Super Admin Account (Firebase Seeded)
 
-The app includes built-in test accounts so you can test all roles immediately without needing to configure Firebase first:
+All demo/sample accounts have been removed. The application only contains the **Super Admin** account, which is automatically verified and created in **Firebase Auth** and **Cloud Firestore** upon launch:
 
-| Role | Email | Password | What You Can Test |
+| Role | Email | Default Password | Features & Permissions |
 | :--- | :--- | :--- | :--- |
-| **Super Admin** | `admin@zing.lk` | `admin123` | Review pending verification submissions, inspect Selfie & NIC front/back, Accept or Reject with custom reason. |
-| **Verified User** | `dilini.p@gmail.com` | `pass123` | Discover verified profiles, apply district/radius filters, send connect requests, chat in real-time, upload up to 10 photos. |
-| **Pending User** | `nuwan.k@gmail.com` | `pass123` | Experience the "Under Review" verification screen and see live status updates when approved by admin. |
+| **Super Admin** | `admin@zing.lk` | `Admin@Zing2026!` *(or `admin123`)* | Access to Super Admin Review Portal, inspect Selfie & NIC front/back of newly registered real users, one-click verification approval, or rejection with reason. |
+
+All other profiles in the app are **real user registrations**:
+- Users register via the Registration screen by uploading their Selfie, NIC Front, and NIC Back.
+- New registrations are saved to Firebase in `pending` status.
+- The Super Admin reviews and activates them from the Admin Portal.
 
 ---
 

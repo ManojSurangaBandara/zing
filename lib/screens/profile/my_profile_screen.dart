@@ -38,7 +38,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   @override
   void initState() {
     super.initState();
-    final user = BackendService().currentUser ?? MockData.initialUsers.first;
+    final user = BackendService().currentUser ?? MockData.superAdmin;
 
     _nameController = TextEditingController(text: user.name);
     _bioController = TextEditingController(text: user.bio);
