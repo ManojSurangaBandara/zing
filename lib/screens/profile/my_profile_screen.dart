@@ -404,19 +404,54 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
+                      isExpanded: true,
                       value: _district,
                       decoration: const InputDecoration(labelText: 'District'),
                       items: SriLankaData.districts.map((d) {
-                        return DropdownMenuItem(value: d, child: Text(d));
+                        return DropdownMenuItem(
+                          value: d,
+                          child: Text(d, overflow: TextOverflow.ellipsis),
+                        );
                       }).toList(),
-                      onChanged: (v) => setState(() => _district = v!),
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setState(() {
+                          _district = v;
+                          final towns = SriLankaData.getTownsForDistrict(v);
+                          _townController.text = towns.isNotEmpty ? towns.first : v;
+                        });
+                      },
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: TextFormField(
-                      controller: _townController,
+                    child: DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      value: () {
+                        final towns = SriLankaData.getTownsForDistrict(_district);
+                        if (towns.contains(_townController.text)) {
+                          return _townController.text;
+                        }
+                        return towns.isNotEmpty ? towns.first : null;
+                      }(),
                       decoration: const InputDecoration(labelText: 'Town / City'),
+                      items: () {
+                        final towns = List<String>.from(SriLankaData.getTownsForDistrict(_district));
+                        if (_townController.text.isNotEmpty && !towns.contains(_townController.text)) {
+                          towns.insert(0, _townController.text);
+                        }
+                        return towns.map((t) {
+                          return DropdownMenuItem(
+                            value: t,
+                            child: Text(t, overflow: TextOverflow.ellipsis),
+                          );
+                        }).toList();
+                      }(),
+                      onChanged: (v) {
+                        if (v != null) {
+                          setState(() => _townController.text = v);
+                        }
+                      },
                     ),
                   ),
                 ],

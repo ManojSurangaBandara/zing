@@ -21,12 +21,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _ageController = TextEditingController(text: '24');
-  final _townController = TextEditingController();
   final _bioController = TextEditingController();
 
   String _gender = 'Female';
   String _preference = 'Men';
   String _selectedDistrict = 'Colombo';
+  late String _selectedTown;
   final List<String> _selectedInterests = ['Coffee & Cafes', 'Travel & Roadtrips'];
 
   File? _selfieFile;
@@ -35,6 +35,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _obscurePassword = true;
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final towns = SriLankaData.getTownsForDistrict(_selectedDistrict);
+    _selectedTown = towns.isNotEmpty ? towns.first : 'Colombo 03';
+  }
 
   Future<void> _captureDocumentPhoto({
     required Function(File) onPicked,
@@ -80,7 +87,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       gender: _gender,
       preference: _preference,
       district: _selectedDistrict,
-      town: _townController.text.trim().isEmpty ? '$_selectedDistrict City' : _townController.text.trim(),
+      town: _selectedTown,
       bio: _bioController.text.trim(),
       interests: _selectedInterests,
       selfieFile: _selfieFile!,
@@ -118,7 +125,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _ageController.dispose();
-    _townController.dispose();
     _bioController.dispose();
     super.dispose();
   }
@@ -257,28 +263,56 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 Row(
                   children: [
                     Expanded(
-                      flex: 3,
+                      flex: 1,
                       child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                         value: _selectedDistrict,
                         decoration: const InputDecoration(
                           labelText: 'District',
                           prefixIcon: Icon(Icons.location_on_outlined),
                         ),
                         items: SriLankaData.districts.map((d) {
-                          return DropdownMenuItem(value: d, child: Text(d));
+                          return DropdownMenuItem(
+                            value: d,
+                            child: Text(d, overflow: TextOverflow.ellipsis),
+                          );
                         }).toList(),
-                        onChanged: (v) => setState(() => _selectedDistrict = v!),
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setState(() {
+                            _selectedDistrict = v;
+                            final towns = SriLankaData.getTownsForDistrict(v);
+                            _selectedTown = towns.isNotEmpty ? towns.first : v;
+                          });
+                        },
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      flex: 3,
-                      child: TextFormField(
-                        controller: _townController,
+                      flex: 1,
+                      child: DropdownButtonFormField<String>(
+                        isExpanded: true,
+                        value: SriLankaData.getTownsForDistrict(_selectedDistrict).contains(_selectedTown)
+                            ? _selectedTown
+                            : (SriLankaData.getTownsForDistrict(_selectedDistrict).isNotEmpty
+                                ? SriLankaData.getTownsForDistrict(_selectedDistrict).first
+                                : null),
                         decoration: const InputDecoration(
                           labelText: 'Town / City',
-                          hintText: 'e.g. Kollupitiya',
+                          prefixIcon: Icon(Icons.apartment_rounded),
                         ),
+                        items: SriLankaData.getTownsForDistrict(_selectedDistrict).map((t) {
+                          return DropdownMenuItem(
+                            value: t,
+                            child: Text(t, overflow: TextOverflow.ellipsis),
+                          );
+                        }).toList(),
+                        onChanged: (v) {
+                          if (v != null) {
+                            setState(() => _selectedTown = v);
+                          }
+                        },
+                        validator: (v) => v == null || v.isEmpty ? 'Select town' : null,
                       ),
                     ),
                   ],
