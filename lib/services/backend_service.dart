@@ -307,7 +307,7 @@ class BackendService extends ChangeNotifier {
 
   // ==================== AUTH & REGISTRATION ====================
 
-  /// Register new user profile with manual verification documents
+  /// Register new user profile with public primary photo and manual verification documents
   Future<({bool success, String message, UserModel? user})> registerWithVerification({
     required String email,
     required String password,
@@ -319,6 +319,7 @@ class BackendService extends ChangeNotifier {
     required String town,
     required String bio,
     required List<String> interests,
+    required File primaryPhotoFile,
     required File selfieFile,
     required File nicFrontFile,
     required File nicBackFile,
@@ -326,12 +327,14 @@ class BackendService extends ChangeNotifier {
     double? longitude,
   }) async {
     try {
-      // 1. Compress verification documents before upload
-      debugPrint('Compressing verification documents before upload...');
+      // 1. Compress public primary photo and verification documents before upload
+      debugPrint('Compressing photos before upload...');
+      final compressedPrimaryPhoto = await ImageCompressionService.compressImageFile(primaryPhotoFile, quality: 80);
       final compressedSelfie = await ImageCompressionService.compressImageFile(selfieFile, quality: 75);
       final compressedNicFront = await ImageCompressionService.compressImageFile(nicFrontFile, quality: 80);
       final compressedNicBack = await ImageCompressionService.compressImageFile(nicBackFile, quality: 80);
 
+      String primaryPhotoUrl = compressedPrimaryPhoto?.path ?? primaryPhotoFile.path;
       String selfieUrl = compressedSelfie?.path ?? selfieFile.path;
       String nicFrontUrl = compressedNicFront?.path ?? nicFrontFile.path;
       String nicBackUrl = compressedNicBack?.path ?? nicBackFile.path;
@@ -348,11 +351,17 @@ class BackendService extends ChangeNotifier {
           newUserId = userCredential.user?.uid ?? newUserId;
 
           final storage = FirebaseStorage.instance;
+          final primaryRef = storage.ref().child('profile_photos/$newUserId/primary.jpg');
           final selfieRef = storage.ref().child('verification/$newUserId/selfie.jpg');
           final nicFrontRef = storage.ref().child('verification/$newUserId/nic_front.jpg');
           final nicBackRef = storage.ref().child('verification/$newUserId/nic_back.jpg');
           final metadata = SettableMetadata(contentType: 'image/jpeg');
 
+          if (compressedPrimaryPhoto != null) {
+            final task = await primaryRef.putFile(compressedPrimaryPhoto, metadata);
+            primaryPhotoUrl = await task.ref.getDownloadURL();
+            debugPrint('Primary photo uploaded to Firebase Storage: $primaryPhotoUrl');
+          }
           if (compressedSelfie != null) {
             final task = await selfieRef.putFile(compressedSelfie, metadata);
             selfieUrl = await task.ref.getDownloadURL();
@@ -388,7 +397,7 @@ class BackendService extends ChangeNotifier {
         town: town.trim(),
         bio: bio.trim(),
         interests: interests,
-        photos: [selfieUrl],
+        photos: [primaryPhotoUrl],
         selfieUrl: selfieUrl,
         nicFrontUrl: nicFrontUrl,
         nicBackUrl: nicBackUrl,
@@ -853,6 +862,37 @@ class BackendService extends ChangeNotifier {
         try {
           await FirebaseFirestore.instance.collection('users').doc(userId).update({
             'photos': currentPhotos,
+          });
+        } catch (_) {}
+      }
+
+      notifyListeners();
+    }
+  }
+
+  /// Set a photo as primary by moving it to index 0 in the user's photos list
+  Future<void> setPrimaryProfilePhoto(String userId, int photoIndex) async {
+    final index = _users.indexWhere((u) => u.id == userId);
+    if (index != -1 && photoIndex > 0 && photoIndex < _users[index].photos.length) {
+      final currentPhotos = List<String>.from(_users[index].photos);
+      final primary = currentPhotos.removeAt(photoIndex);
+      currentPhotos.insert(0, primary);
+
+      final updatedUser = _users[index].copyWith(
+        photos: currentPhotos,
+        updatedAt: DateTime.now(),
+      );
+      _users[index] = updatedUser;
+
+      if (_currentUser?.id == userId) {
+        _currentUser = updatedUser;
+      }
+
+      if (_isFirebaseAvailable) {
+        try {
+          await FirebaseFirestore.instance.collection('users').doc(userId).update({
+            'photos': currentPhotos,
+            'updatedAt': DateTime.now().toIso8601String(),
           });
         } catch (_) {}
       }

@@ -29,6 +29,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   late String _selectedTown;
   final List<String> _selectedInterests = ['Coffee & Cafes', 'Travel & Roadtrips'];
 
+  File? _primaryPhotoFile;
   File? _selfieFile;
   File? _nicFrontFile;
   File? _nicBackFile;
@@ -62,8 +63,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _submitRegistration() async {
     if (!_formKey.currentState!.validate()) return;
 
+    if (_primaryPhotoFile == null) {
+      _showError('Please upload a Primary Profile Picture for your profile.');
+      return;
+    }
     if (_selfieFile == null) {
-      _showError('Please upload a clear Selfie photo for verification.');
+      _showError('Please upload a clear Selfie photo for NIC verification.');
       return;
     }
     if (_nicFrontFile == null) {
@@ -90,6 +95,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       town: _selectedTown,
       bio: _bioController.text.trim(),
       interests: _selectedInterests,
+      primaryPhotoFile: _primaryPhotoFile!,
       selfieFile: _selfieFile!,
       nicFrontFile: _nicFrontFile!,
       nicBackFile: _nicBackFile!,
@@ -368,19 +374,62 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Section 3: Verification Documents
-                _sectionHeader('3. Verification Documents (Super Admin Review)', Icons.verified_user_outlined),
+                // Section 3: Public Profile Picture
+                _sectionHeader('3. Primary Profile Picture (Public)', Icons.photo_camera_front_rounded),
                 const SizedBox(height: 6),
                 const Text(
-                  'All photos are compressed automatically before upload to save data.',
+                  'This is your main dating profile picture visible to potential matches.',
                   style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                 ),
                 const SizedBox(height: 14),
 
-                // 1. Selfie
+                _buildDocUploadCard(
+                  title: 'Primary Profile Picture',
+                  subtitle: 'Select a clear, authentic photo of yourself',
+                  icon: Icons.account_box_rounded,
+                  file: _primaryPhotoFile,
+                  onCaptureCamera: () => _captureDocumentPhoto(
+                    onPicked: (f) => _primaryPhotoFile = f,
+                    isFrontCamera: true,
+                    source: ImageSource.camera,
+                  ),
+                  onPickGallery: () => _captureDocumentPhoto(
+                    onPicked: (f) => _primaryPhotoFile = f,
+                    isFrontCamera: false,
+                    source: ImageSource.gallery,
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Section 4: Verification Documents (Admin Only)
+                _sectionHeader('4. Identity Verification (Private - Admin Review Only)', Icons.verified_user_outlined),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.shield_outlined, size: 18, color: Color(0xFF2563EB)),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Selfie & NIC are reviewed strictly by Super Admin to verify identity and will NEVER be shown on your dating profile.',
+                          style: TextStyle(fontSize: 11.5, color: Color(0xFF1E40AF), height: 1.3),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // 1. Selfie (For NIC verification only)
                 _buildDocUploadCard(
                   title: 'A. Live Selfie Photo',
-                  subtitle: 'Take live selfie with front camera',
+                  subtitle: 'Live selfie strictly for matching with your NIC photo',
                   icon: Icons.face_rounded,
                   file: _selfieFile,
                   onCaptureCamera: () => _captureDocumentPhoto(

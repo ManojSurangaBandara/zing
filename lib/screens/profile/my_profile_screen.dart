@@ -114,6 +114,69 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     }
   }
 
+  void _setPrimaryPhoto(int index) async {
+    if (index <= 0 || index >= _photos.length) return;
+
+    setState(() {
+      final selected = _photos.removeAt(index);
+      _photos.insert(0, selected);
+    });
+
+    final backend = BackendService();
+    final user = backend.currentUser;
+    if (user != null) {
+      await backend.setPrimaryProfilePhoto(user.id, index);
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: AppTheme.success,
+          content: Text('⭐ Primary profile photo updated!'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  void _showPhotoOptions(int index) {
+    if (index == 0) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.star_rounded, color: Colors.amber, size: 30),
+              title: const Text('Set as Primary Profile Picture', style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: const Text('This photo will appear first on your profile and discovery card.'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _setPrimaryPhoto(index);
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: AppTheme.error, size: 26),
+              title: const Text('Delete Photo', style: TextStyle(color: AppTheme.error, fontWeight: FontWeight.w600)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _removePhoto(index);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -298,28 +361,75 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
 
                   return Stack(
                     children: [
-                      ClipRRect(
+                      InkWell(
+                        onTap: () => _showPhotoOptions(index),
                         borderRadius: BorderRadius.circular(14),
-                        child: SizedBox(
-                          width: double.infinity,
-                          height: double.infinity,
-                          child: _buildPhotoThumbnail(photoPath),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: double.infinity,
+                            child: _buildPhotoThumbnail(photoPath),
+                          ),
                         ),
                       ),
-                      // Primary photo pill
+                      // Primary photo badge
                       if (isPrimary)
                         Positioned(
                           top: 6,
                           left: 6,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
                             decoration: BoxDecoration(
                               color: AppTheme.primary,
                               borderRadius: BorderRadius.circular(6),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.25),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ],
                             ),
-                            child: const Text(
-                              'Primary',
-                              style: TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.bold),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.star_rounded, color: Colors.amber, size: 12),
+                                SizedBox(width: 3),
+                                Text(
+                                  'Primary',
+                                  style: TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else
+                        // Non-primary: quick button to make primary
+                        Positioned(
+                          bottom: 6,
+                          left: 6,
+                          right: 6,
+                          child: InkWell(
+                            onTap: () => _setPrimaryPhoto(index),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.65),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.star_border_rounded, size: 12, color: Colors.amber),
+                                  SizedBox(width: 3),
+                                  Text(
+                                    'Set Primary',
+                                    style: TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w700),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -331,8 +441,8 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                           onTap: () => _removePhoto(index),
                           child: Container(
                             padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.black54,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.55),
                               shape: BoxShape.circle,
                             ),
                             child: const Icon(Icons.close, size: 14, color: Colors.white),
