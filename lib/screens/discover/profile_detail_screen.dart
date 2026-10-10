@@ -4,11 +4,18 @@ import '../../constants/app_theme.dart';
 import '../../models/user_model.dart';
 import '../../services/backend_service.dart';
 import '../../services/location_service.dart';
+import '../chat/chat_detail_screen.dart';
+import '../requests/connect_requests_screen.dart';
 
 class ProfileDetailScreen extends StatefulWidget {
   final UserModel user;
+  final bool autoOpenConnect;
 
-  const ProfileDetailScreen({super.key, required this.user});
+  const ProfileDetailScreen({
+    super.key,
+    required this.user,
+    this.autoOpenConnect = false,
+  });
 
   @override
   State<ProfileDetailScreen> createState() => _ProfileDetailScreenState();
@@ -18,6 +25,33 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
   final PageController _pageController = PageController();
   int _activePhotoIndex = 0;
   bool _isSending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    BackendService().addListener(_onBackendChange);
+    if (widget.autoOpenConnect) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final backend = BackendService();
+        final hasSent = backend.hasSentConnectRequestTo(widget.user.id);
+        final isConnected = backend.isConnectedWith(widget.user.id);
+        if (!hasSent && !isConnected && mounted) {
+          _sendConnectDialog();
+        }
+      });
+    }
+  }
+
+  void _onBackendChange() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    BackendService().removeListener(_onBackendChange);
+    _pageController.dispose();
+    super.dispose();
+  }
 
   void _sendConnectDialog() {
     final messageController = TextEditingController(
@@ -376,6 +410,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                           }).toList(),
                         ),
                       ],
+                      const SizedBox(height: 90),
                     ],
                   ),
                 ),
@@ -396,35 +431,147 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
             ),
           ),
 
-          // Bottom Action Bar: Connect
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 10,
-                    offset: const Offset(0, -4),
-                  ),
-                ],
-              ),
-              child: ElevatedButton.icon(
-                onPressed: _sendConnectDialog,
-                icon: const Icon(Icons.favorite_rounded, size: 22),
-                label: Text('Connect with ${user.name.split(" ").first}'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  elevation: 2,
-                ),
+          // Bottom Action Bar: Conditional based on connect status
+          _buildBottomActionBar(user),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomActionBar(UserModel user) {
+    final backend = BackendService();
+    final isSelf = backend.currentUser?.id == user.id;
+    if (isSelf) return const SizedBox.shrink();
+
+    final isConnected = backend.isConnectedWith(user.id);
+    final hasSentRequest = backend.hasSentConnectRequestTo(user.id);
+    final hasReceivedRequest = backend.hasReceivedConnectRequestFrom(user.id);
+    final isRejected = backend.isConnectRequestRejected(user.id);
+    final firstName = user.name.split(" ").first;
+
+    Widget actionWidget;
+
+    if (isConnected) {
+      actionWidget = ElevatedButton.icon(
+        onPressed: () {
+          final myId = backend.currentUser?.id ?? '';
+          final matchId = 'match_${user.id}_$myId';
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChatDetailScreen(
+                chatId: matchId,
+                otherUserId: user.id,
+                otherUserName: user.name,
+                otherUserPhoto: user.primaryPhoto,
               ),
             ),
-          ),
-        ],
+          );
+        },
+        icon: const Icon(Icons.chat_bubble_rounded, size: 20),
+        label: Text('Connected! Chat with $firstName'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppTheme.secondary,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+    } else if (hasSentRequest) {
+      // Connect request already sent: Do NOT show connect button!
+      actionWidget = Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF8E1), // Amber 50
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFFD54F), width: 1.2), // Amber 300
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.hourglass_top_rounded, color: Color(0xFFFF8F00), size: 20),
+            SizedBox(width: 8),
+            Text(
+              'Connect Request Sent • Pending Response',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFFF6F00),
+              ),
+            ),
+          ],
+        ),
+      );
+    } else if (hasReceivedRequest) {
+      actionWidget = ElevatedButton.icon(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ConnectRequestsScreen()),
+          );
+        },
+        icon: const Icon(Icons.mark_email_unread_rounded, size: 20),
+        label: Text('Respond to $firstName\'s Request'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppTheme.primary,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+    } else if (isRejected) {
+      actionWidget = Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.block_rounded, color: Colors.grey.shade600, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'Connect Request Declined',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade700,
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // Connect request NOT sent yet: Show Connect button
+      actionWidget = ElevatedButton.icon(
+        onPressed: _sendConnectDialog,
+        icon: const Icon(Icons.favorite_rounded, size: 22),
+        label: Text('Connect with $firstName'),
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+    }
+
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 10,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: actionWidget,
       ),
     );
   }

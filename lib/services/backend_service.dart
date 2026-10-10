@@ -1042,6 +1042,60 @@ class BackendService extends ChangeNotifier {
     return _requests.where((r) => r.senderId == _currentUser!.id).toList();
   }
 
+  /// Returns true if current user has already sent a pending connect request to [receiverId]
+  bool hasSentConnectRequestTo(String receiverId) {
+    if (_currentUser == null) return false;
+    return _requests.any((r) =>
+        r.senderId == _currentUser!.id &&
+        r.receiverId == receiverId &&
+        r.isPending);
+  }
+
+  /// Returns true if the other user has sent a pending connect request to current user
+  bool hasReceivedConnectRequestFrom(String senderId) {
+    if (_currentUser == null) return false;
+    return _requests.any((r) =>
+        r.senderId == senderId &&
+        r.receiverId == _currentUser!.id &&
+        r.isPending);
+  }
+
+  /// Returns true if current user and [otherUserId] are already connected/matched
+  bool isConnectedWith(String otherUserId) {
+    if (_currentUser == null) return false;
+    final myId = _currentUser!.id;
+    return _matches.any((m) => m.users.contains(myId) && m.users.contains(otherUserId)) ||
+        _requests.any((r) =>
+            ((r.senderId == myId && r.receiverId == otherUserId) ||
+                (r.senderId == otherUserId && r.receiverId == myId)) &&
+            r.isAccepted);
+  }
+
+  /// Returns true if a connect request to [otherUserId] was rejected
+  bool isConnectRequestRejected(String otherUserId) {
+    if (_currentUser == null) return false;
+    final myId = _currentUser!.id;
+    return _requests.any((r) =>
+        r.senderId == myId &&
+        r.receiverId == otherUserId &&
+        r.isRejected);
+  }
+
+  /// Returns existing connect request between current user and [otherUserId], if any
+  ConnectRequestModel? getConnectRequestWith(String otherUserId) {
+    if (_currentUser == null) return null;
+    final myId = _currentUser!.id;
+    try {
+      return _requests.firstWhere(
+        (r) =>
+            (r.senderId == myId && r.receiverId == otherUserId) ||
+            (r.senderId == otherUserId && r.receiverId == myId),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<bool> respondToConnectRequest(String requestId, {required bool accept}) async {
     final index = _requests.indexWhere((r) => r.id == requestId);
     if (index == -1) return false;

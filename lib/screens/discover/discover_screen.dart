@@ -5,6 +5,8 @@ import '../../constants/sri_lanka_data.dart';
 import '../../models/user_model.dart';
 import '../../services/backend_service.dart';
 import '../../services/location_service.dart';
+import '../chat/chat_detail_screen.dart';
+import '../requests/connect_requests_screen.dart';
 import 'profile_detail_screen.dart';
 
 class DiscoverScreen extends StatefulWidget {
@@ -29,14 +31,20 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   @override
   void initState() {
     super.initState();
+    BackendService().addListener(_onBackendChange);
     final user = BackendService().currentUser;
     if (user != null) {
       _genderPreference = user.preference;
     }
   }
 
+  void _onBackendChange() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    BackendService().removeListener(_onBackendChange);
     _searchController.dispose();
     super.dispose();
   }
@@ -442,6 +450,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     }
 
     final photoCount = profile.photos.length;
+    final backend = BackendService();
+    final hasSentRequest = backend.hasSentConnectRequestTo(profile.id);
+    final isConnected = backend.isConnectedWith(profile.id);
+    final hasReceivedRequest = backend.hasReceivedConnectRequestFrom(profile.id);
+    final isRejected = backend.isConnectRequestRejected(profile.id);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 20),
@@ -455,7 +468,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             MaterialPageRoute(
               builder: (_) => ProfileDetailScreen(user: profile),
             ),
-          );
+          ).then((_) {
+            if (mounted) setState(() {});
+          });
         },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -481,27 +496,73 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     ),
                   ),
                 ),
-                // Top Badges: Verified & Photo count
+                // Top Badges: Verified, Request Sent, Photo count
                 Positioned(
                   top: 14,
                   left: 14,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.92),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.verified_rounded, color: AppTheme.success, size: 14),
-                        SizedBox(width: 4),
-                        Text(
-                          'NIC Verified',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.92),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.verified_rounded, color: AppTheme.success, size: 14),
+                            SizedBox(width: 4),
+                            Text(
+                              'NIC Verified',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (hasSentRequest) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF8F00).withOpacity(0.95),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.hourglass_top_rounded, color: Colors.white, size: 12),
+                              SizedBox(width: 4),
+                              Text(
+                                'Request Sent',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ] else if (isConnected) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppTheme.secondary.withOpacity(0.95),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.favorite_rounded, color: Colors.white, size: 12),
+                              SizedBox(width: 4),
+                              Text(
+                                'Connected',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
-                    ),
+                    ],
                   ),
                 ),
                 if (photoCount > 1)
@@ -616,7 +677,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     const SizedBox(height: 16),
                   ],
 
-                  // Action Buttons: View Profile & Connect
+                  // Action Buttons: View Profile & (Connect / Status)
                   Row(
                     children: [
                       Expanded(
@@ -625,7 +686,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(builder: (_) => ProfileDetailScreen(user: profile)),
-                            );
+                            ).then((_) {
+                              if (mounted) setState(() {});
+                            });
                           },
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size.fromHeight(42),
@@ -635,22 +698,131 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => ProfileDetailScreen(user: profile)),
-                            );
-                          },
-                          icon: const Icon(Icons.favorite_rounded, size: 18),
-                          label: const Text('Connect'),
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(42),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      if (hasSentRequest)
+                        // Connect request already sent: Do NOT show connect button!
+                        Expanded(
+                          child: Container(
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF8E1), // Amber 50
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFFFD54F)), // Amber 300
+                            ),
+                            alignment: Alignment.center,
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.hourglass_top_rounded, size: 16, color: Color(0xFFFF8F00)),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Request Sent',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFFFF6F00),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else if (isConnected)
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              final myId = backend.currentUser?.id ?? '';
+                              final matchId = 'match_${profile.id}_$myId';
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ChatDetailScreen(
+                                    chatId: matchId,
+                                    otherUserId: profile.id,
+                                    otherUserName: profile.name,
+                                    otherUserPhoto: profile.primaryPhoto,
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.chat_bubble_rounded, size: 16),
+                            label: const Text('Chat'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.secondary,
+                              minimumSize: const Size.fromHeight(42),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        )
+                      else if (hasReceivedRequest)
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const ConnectRequestsScreen()),
+                              );
+                            },
+                            icon: const Icon(Icons.mark_email_unread_rounded, size: 16),
+                            label: const Text('Respond'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primary,
+                              minimumSize: const Size.fromHeight(42),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        )
+                      else if (isRejected)
+                        Expanded(
+                          child: Container(
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            alignment: Alignment.center,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.block_rounded, size: 16, color: Colors.grey.shade600),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Declined',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else
+                        // Show Connect button ONLY when connect request hasn't been sent!
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ProfileDetailScreen(
+                                    user: profile,
+                                    autoOpenConnect: true,
+                                  ),
+                                ),
+                              ).then((_) {
+                                if (mounted) setState(() {});
+                              });
+                            },
+                            icon: const Icon(Icons.favorite_rounded, size: 18),
+                            label: const Text('Connect'),
+                            style: ElevatedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(42),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ],
