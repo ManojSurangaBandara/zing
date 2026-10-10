@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../constants/app_theme.dart';
 import '../../constants/sri_lanka_data.dart';
 import '../../services/backend_service.dart';
@@ -35,14 +36,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscurePassword = true;
   bool _isLoading = false;
 
-  Future<void> _pickImage(Function(File) onPicked) async {
-    final xfile = await ImageCompressionService.pickImage();
-    if (xfile != null) {
-      final file = File(xfile.path);
-      // Auto compress
-      final compressed = await ImageCompressionService.compressImageFile(file);
+  Future<void> _captureDocumentPhoto({
+    required Function(File) onPicked,
+    bool isFrontCamera = false,
+    ImageSource source = ImageSource.camera,
+  }) async {
+    final file = await ImageCompressionService.captureVerificationPhoto(
+      isFrontCamera: isFrontCamera,
+      source: source,
+    );
+    if (file != null) {
       setState(() {
-        onPicked(compressed ?? file);
+        onPicked(file);
       });
     }
   }
@@ -341,30 +346,57 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 // 1. Selfie
                 _buildDocUploadCard(
                   title: 'A. Live Selfie Photo',
-                  subtitle: 'Take or choose a clear selfie showing your face',
-                  icon: Icons.camera_alt_rounded,
+                  subtitle: 'Take live selfie with front camera',
+                  icon: Icons.face_rounded,
                   file: _selfieFile,
-                  onPick: () => _pickImage((f) => _selfieFile = f),
+                  onCaptureCamera: () => _captureDocumentPhoto(
+                    onPicked: (f) => _selfieFile = f,
+                    isFrontCamera: true,
+                    source: ImageSource.camera,
+                  ),
+                  onPickGallery: () => _captureDocumentPhoto(
+                    onPicked: (f) => _selfieFile = f,
+                    isFrontCamera: true,
+                    source: ImageSource.gallery,
+                  ),
                 ),
                 const SizedBox(height: 12),
 
                 // 2. NIC Front
                 _buildDocUploadCard(
                   title: 'B. Sri Lankan NIC (Front Side)',
-                  subtitle: 'Front side with photo and NIC number clearly visible',
+                  subtitle: 'Snap front side with rear camera',
                   icon: Icons.badge_rounded,
                   file: _nicFrontFile,
-                  onPick: () => _pickImage((f) => _nicFrontFile = f),
+                  onCaptureCamera: () => _captureDocumentPhoto(
+                    onPicked: (f) => _nicFrontFile = f,
+                    isFrontCamera: false,
+                    source: ImageSource.camera,
+                  ),
+                  onPickGallery: () => _captureDocumentPhoto(
+                    onPicked: (f) => _nicFrontFile = f,
+                    isFrontCamera: false,
+                    source: ImageSource.gallery,
+                  ),
                 ),
                 const SizedBox(height: 12),
 
                 // 3. NIC Back
                 _buildDocUploadCard(
                   title: 'C. Sri Lankan NIC (Back Side)',
-                  subtitle: 'Back side showing address or barcode',
+                  subtitle: 'Snap back side with rear camera',
                   icon: Icons.credit_card_rounded,
                   file: _nicBackFile,
-                  onPick: () => _pickImage((f) => _nicBackFile = f),
+                  onCaptureCamera: () => _captureDocumentPhoto(
+                    onPicked: (f) => _nicBackFile = f,
+                    isFrontCamera: false,
+                    source: ImageSource.camera,
+                  ),
+                  onPickGallery: () => _captureDocumentPhoto(
+                    onPicked: (f) => _nicBackFile = f,
+                    isFrontCamera: false,
+                    source: ImageSource.gallery,
+                  ),
                 ),
                 const SizedBox(height: 28),
 
@@ -420,12 +452,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     required String subtitle,
     required IconData icon,
     required File? file,
-    required VoidCallback onPick,
+    required VoidCallback onCaptureCamera,
+    required VoidCallback onPickGallery,
   }) {
     final bool hasFile = file != null;
 
     return Container(
-      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -433,55 +465,121 @@ class _RegisterScreenState extends State<RegisterScreen> {
           color: hasFile ? AppTheme.success : AppTheme.border,
           width: hasFile ? 1.5 : 1.0,
         ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: hasFile ? AppTheme.success.withOpacity(0.12) : AppTheme.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              hasFile ? Icons.check_circle_rounded : icon,
-              color: hasFile ? AppTheme.success : AppTheme.primary,
-              size: 24,
-            ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onCaptureCamera, // Tapping card body directly opens camera
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary,
+                Stack(
+                  children: [
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: hasFile ? AppTheme.success.withValues(alpha: 0.12) : AppTheme.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: hasFile
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.file(
+                                file,
+                                width: 50,
+                                height: 50,
+                                fit: BoxFit.cover,
+                              ),
+                            )
+                          : Icon(
+                              icon,
+                              color: AppTheme.primary,
+                              size: 26,
+                            ),
+                    ),
+                    if (hasFile)
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: const BoxDecoration(
+                            color: AppTheme.success,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.check, size: 12, color: Colors.white),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        hasFile ? 'Photo captured & compressed ✓' : subtitle,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: hasFile ? AppTheme.success : AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  hasFile ? 'Image selected & compressed ✓' : subtitle,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: hasFile ? AppTheme.success : AppTheme.textSecondary,
-                  ),
+                const SizedBox(width: 6),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Primary Camera Button (Opens Camera Directly)
+                    ElevatedButton.icon(
+                      onPressed: onCaptureCamera,
+                      icon: Icon(hasFile ? Icons.refresh_rounded : Icons.camera_alt_rounded, size: 14),
+                      label: Text(hasFile ? 'Retake' : 'Camera'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        minimumSize: const Size(0, 36),
+                        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        backgroundColor: hasFile ? AppTheme.primaryDark : AppTheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    // Secondary Gallery Button (Optional fallback)
+                    IconButton(
+                      onPressed: onPickGallery,
+                      tooltip: 'Choose from Gallery',
+                      icon: const Icon(Icons.photo_library_outlined, size: 18, color: AppTheme.textSecondary),
+                      style: IconButton.styleFrom(
+                        padding: const EdgeInsets.all(6),
+                        minimumSize: const Size(36, 36),
+                        backgroundColor: Colors.grey.shade100,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-          OutlinedButton(
-            onPressed: onPick,
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size(80, 36),
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-            ),
-            child: Text(hasFile ? 'Change' : 'Upload'),
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -182,7 +182,7 @@ class _HomeShellState extends State<HomeShell> {
 
     return Scaffold(
       body: screens[_currentIndex],
-      floatingActionButton: user?.role == 'super_admin'
+      floatingActionButton: (user != null && user.isSuperAdmin)
           ? FloatingActionButton.extended(
               onPressed: () {
                 Navigator.push(

@@ -509,7 +509,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               const SizedBox(height: 20),
 
               // Admin / Role switcher for testing
-              if (user?.role == 'super_admin' || user?.email == 'admin@zing.lk')
+              if (user?.isSuperAdmin == true || user?.email == 'admin@zing.lk')
                 Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   width: double.infinity,

@@ -56,8 +56,10 @@ class BackendService extends ChangeNotifier {
     _messages.clear();
     _notifications.clear();
 
-    // Ensure Super Admin is always registered in the system and created in Firebase
-    await _ensureSuperAdminInFirebase();
+    // Ensure Super Admin is registered in local memory
+    if (!_users.any((u) => u.email.toLowerCase() == MockData.adminEmail.toLowerCase())) {
+      _users.add(MockData.superAdmin);
+    }
 
     // If Firebase is available, sync real users and check active session
     if (_isFirebaseAvailable) {
@@ -65,11 +67,16 @@ class BackendService extends ChangeNotifier {
 
       final fbUser = FirebaseAuth.instance.currentUser;
       if (fbUser != null) {
-        final existing = _users.where((u) => u.id == fbUser.uid || u.email.toLowerCase() == fbUser.email?.toLowerCase());
-        if (existing.isNotEmpty) {
-          _currentUser = existing.first;
+        if (fbUser.email?.toLowerCase() == MockData.adminEmail.toLowerCase()) {
+          // If active user is admin, ensure their Firestore doc exists
+          await provisionOrSyncSuperAdmin();
         } else {
-          _currentUser = null;
+          final existing = _users.where((u) => u.id == fbUser.uid || u.email.toLowerCase() == fbUser.email?.toLowerCase());
+          if (existing.isNotEmpty) {
+            _currentUser = existing.first;
+          } else {
+            _currentUser = null;
+          }
         }
       } else {
         _currentUser = null;
@@ -81,76 +88,161 @@ class BackendService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Automatically creates and configures the Super Admin account in Firebase Auth and Firestore
-  Future<void> _ensureSuperAdminInFirebase() async {
-    // Add super admin to local list
-    if (!_users.any((u) => u.email == MockData.adminEmail)) {
+  /// Refreshes all users, requests, and matches from Cloud Firestore
+  Future<void> refreshFromFirebase() async {
+    if (_isFirebaseAvailable) {
+      await _syncFromFirebase();
+      notifyListeners();
+    }
+  }
+
+  /// Automatically provisions or synchronizes the Super Admin account with Firebase Auth
+  /// and writes their document to the Firestore `users` collection with role: 'admin'.
+  Future<({bool success, String message, String? uid, UserModel? user})> provisionOrSyncSuperAdmin({
+    String? password,
+  }) async {
+    final pwd = password ?? MockData.adminDefaultPassword;
+
+    // Ensure super admin is in memory
+    if (!_users.any((u) => u.email.toLowerCase() == MockData.adminEmail.toLowerCase())) {
       _users.add(MockData.superAdmin);
     }
 
-    if (!_isFirebaseAvailable) return;
+    if (!_isFirebaseAvailable) {
+      _currentUser = MockData.superAdmin;
+      notifyListeners();
+      return (
+        success: true,
+        message: 'Offline mode: Super Admin active locally.',
+        uid: MockData.adminId,
+        user: MockData.superAdmin,
+      );
+    }
 
     try {
       final auth = FirebaseAuth.instance;
       final firestore = FirebaseFirestore.instance;
 
-      String adminUid = MockData.adminId;
+      User? authUser = auth.currentUser;
+      String? adminUid;
 
-      // 1. Try creating or verifying Super Admin in Firebase Auth
-      try {
-        final credential = await auth.createUserWithEmailAndPassword(
-          email: MockData.adminEmail,
-          password: MockData.adminDefaultPassword,
-        );
-        adminUid = credential.user?.uid ?? MockData.adminId;
-        debugPrint('Super Admin user created in Firebase Auth: $adminUid');
-      } on FirebaseAuthException catch (authErr) {
-        if (authErr.code == 'email-already-in-use') {
-          debugPrint('Super Admin email already registered in Firebase Auth.');
-          try {
-            // Check if we can sign in or retrieve UID
-            final signInRes = await auth.signInWithEmailAndPassword(
-              email: MockData.adminEmail,
-              password: MockData.adminDefaultPassword,
-            );
-            adminUid = signInRes.user?.uid ?? MockData.adminId;
-          } catch (_) {
-            // Could have a custom password; query Firestore by email
-            final query = await firestore
-                .collection('users')
-                .where('email', isEqualTo: MockData.adminEmail)
-                .limit(1)
-                .get();
-            if (query.docs.isNotEmpty) {
-              adminUid = query.docs.first.id;
-            }
-          }
-        } else {
-          debugPrint('Firebase Auth Super Admin initialization notice: $authErr');
-        }
-      }
-
-      // 2. Ensure Super Admin document exists in Firestore
-      final adminDoc = await firestore.collection('users').doc(adminUid).get();
-      if (!adminDoc.exists) {
-        final superAdminUser = MockData.superAdmin.copyWith(id: adminUid);
-        await firestore.collection('users').doc(adminUid).set(superAdminUser.toMap(), SetOptions(merge: true));
-        debugPrint('Created Super Admin document in Firestore: $adminUid');
-
-        // Update in-memory reference
-        final idx = _users.indexWhere((u) => u.email == MockData.adminEmail);
-        if (idx != -1) {
-          _users[idx] = superAdminUser;
-        }
+      // 1. Ensure Firebase Auth session is the Super Admin
+      if (authUser != null && authUser.email?.toLowerCase() == MockData.adminEmail.toLowerCase()) {
+        adminUid = authUser.uid;
+        debugPrint('Super Admin already signed into Firebase Auth with UID: $adminUid');
       } else {
-        final existingAdmin = UserModel.fromMap(adminDoc.data()!, adminDoc.id);
-        final idx = _users.indexWhere((u) => u.email == MockData.adminEmail);
-        if (idx != -1) {
-          _users[idx] = existingAdmin;
+        // Attempt sign in with email and password
+        try {
+          final res = await auth.signInWithEmailAndPassword(
+            email: MockData.adminEmail,
+            password: pwd,
+          );
+          authUser = res.user;
+          adminUid = authUser?.uid;
+          debugPrint('Super Admin signed in to Firebase Auth with UID: $adminUid');
+        } on FirebaseAuthException catch (authErr) {
+          debugPrint('Admin sign-in notice: ${authErr.code} - ${authErr.message}');
+          if (authErr.code == 'user-not-found' ||
+              authErr.code == 'invalid-credential' ||
+              authErr.code == 'wrong-password') {
+            // User does not exist in Firebase Auth yet -> Create it
+            try {
+              final createRes = await auth.createUserWithEmailAndPassword(
+                email: MockData.adminEmail,
+                password: pwd,
+              );
+              authUser = createRes.user;
+              adminUid = authUser?.uid;
+              debugPrint('Created Super Admin user in Firebase Auth with UID: $adminUid');
+            } on FirebaseAuthException catch (createErr) {
+              if (createErr.code == 'email-already-in-use') {
+                // Already in use, try signing in again
+                final retryRes = await auth.signInWithEmailAndPassword(
+                  email: MockData.adminEmail,
+                  password: pwd,
+                );
+                authUser = retryRes.user;
+                adminUid = authUser?.uid;
+              } else {
+                return (
+                  success: false,
+                  message: 'Firebase Auth creation failed: ${createErr.message}',
+                  uid: null,
+                  user: null,
+                );
+              }
+            }
+          } else {
+            return (
+              success: false,
+              message: 'Firebase Auth sign-in failed: ${authErr.message}',
+              uid: null,
+              user: null,
+            );
+          }
         }
       }
-    } catch (e) {
-      debugPrint('Error ensuring Super Admin in Firebase: $e');
+
+      adminUid ??= auth.currentUser?.uid;
+
+      if (adminUid == null) {
+        return (
+          success: false,
+          message: 'Unable to establish Firebase Auth session for Super Admin.',
+          uid: null,
+          user: null,
+        );
+      }
+
+      // 2. Prepare the Super Admin model and data map
+      final superAdminUser = MockData.superAdmin.copyWith(
+        id: adminUid,
+        role: 'admin', // Exact match for Firebase Storage isAdmin() rule
+        status: 'approved',
+      );
+
+      final adminDocData = superAdminUser.toMap();
+      adminDocData['role'] = 'admin';
+      adminDocData['status'] = 'approved';
+
+      // 3. Write directly to Firestore: collection('users').doc(adminUid)
+      await firestore.collection('users').doc(adminUid).set(
+        adminDocData,
+        SetOptions(merge: true),
+      );
+      debugPrint('Successfully set Super Admin document in Firestore: users/$adminUid');
+
+      // 4. Update memory cache and active session
+      _currentUser = superAdminUser;
+
+      final existingIndex = _users.indexWhere(
+        (u) => u.email.toLowerCase() == MockData.adminEmail.toLowerCase() || u.id == adminUid,
+      );
+      if (existingIndex != -1) {
+        _users[existingIndex] = superAdminUser;
+      } else {
+        _users.add(superAdminUser);
+      }
+
+      // Remove any lingering dummy super_admin_zing_lk if different
+      _users.removeWhere((u) => u.id == MockData.adminId && adminUid != MockData.adminId);
+
+      notifyListeners();
+
+      return (
+        success: true,
+        message: 'Super Admin document verified in Firestore (ID: $adminUid)',
+        uid: adminUid,
+        user: superAdminUser,
+      );
+    } catch (e, stack) {
+      debugPrint('Error provisioning Super Admin in Firestore: $e\n$stack');
+      return (
+        success: false,
+        message: 'Failed to write Super Admin document to Firestore: $e',
+        uid: null,
+        user: _currentUser,
+      );
     }
   }
 
@@ -358,7 +450,35 @@ class BackendService extends ChangeNotifier {
     final cleanPassword = password.trim();
 
     try {
-      // 1. Authenticate with Firebase Auth if available
+      // 1. Super Admin authentication & Firestore document synchronization
+      if (cleanEmail == MockData.adminEmail.toLowerCase()) {
+        if (cleanPassword != 'admin123' && cleanPassword != MockData.adminDefaultPassword) {
+          return (
+            success: false,
+            message: 'Incorrect password for Super Admin. (Default: admin123)',
+            user: null,
+          );
+        }
+
+        final syncResult = await provisionOrSyncSuperAdmin(password: cleanPassword);
+        if (syncResult.success) {
+          return (
+            success: true,
+            message: 'Welcome Super Admin!',
+            user: syncResult.user ?? _currentUser,
+          );
+        } else {
+          _currentUser = MockData.superAdmin;
+          notifyListeners();
+          return (
+            success: true,
+            message: 'Admin active locally (${syncResult.message})',
+            user: MockData.superAdmin,
+          );
+        }
+      }
+
+      // 2. Regular user authentication with Firebase Auth
       if (_isFirebaseAvailable) {
         try {
           final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
@@ -371,7 +491,7 @@ class BackendService extends ChangeNotifier {
             if (doc.exists && doc.data() != null) {
               final user = UserModel.fromMap(doc.data()!, doc.id);
 
-              if (user.role != 'super_admin') {
+              if (!user.isSuperAdmin) {
                 if (user.status == 'pending') {
                   _currentUser = user;
                   notifyListeners();
@@ -402,31 +522,9 @@ class BackendService extends ChangeNotifier {
           }
         } on FirebaseAuthException catch (authErr) {
           debugPrint('Firebase signIn error: ${authErr.code} - ${authErr.message}');
-          // If not admin account, return the auth error
-          if (cleanEmail != MockData.adminEmail.toLowerCase()) {
-            return (
-              success: false,
-              message: authErr.message ?? 'Invalid email or password.',
-              user: null,
-            );
-          }
-        }
-      }
-
-      // 2. Super Admin fallback check
-      if (cleanEmail == MockData.adminEmail.toLowerCase()) {
-        if (cleanPassword == 'admin123' || cleanPassword == MockData.adminDefaultPassword) {
-          _currentUser = MockData.superAdmin;
-          notifyListeners();
-          return (
-            success: true,
-            message: 'Welcome Super Admin!',
-            user: MockData.superAdmin,
-          );
-        } else {
           return (
             success: false,
-            message: 'Incorrect password for Super Admin.',
+            message: authErr.message ?? 'Invalid email or password.',
             user: null,
           );
         }
@@ -438,7 +536,7 @@ class BackendService extends ChangeNotifier {
         orElse: () => throw Exception('No account found with this email.'),
       );
 
-      if (localUser.role != 'super_admin') {
+      if (!localUser.isSuperAdmin) {
         if (localUser.status == 'pending') {
           _currentUser = localUser;
           notifyListeners();
@@ -491,17 +589,23 @@ class BackendService extends ChangeNotifier {
 
   /// Fetch all profiles pending verification
   List<UserModel> getPendingVerifications() {
-    return _users.where((u) => u.status == 'pending').toList();
+    return _users
+        .where((u) => u.status == 'pending' && !u.isSuperAdmin && u.email.toLowerCase() != MockData.adminEmail.toLowerCase())
+        .toList();
   }
 
   /// Fetch all approved profiles
   List<UserModel> getApprovedUsers() {
-    return _users.where((u) => u.status == 'approved' && u.role != 'super_admin').toList();
+    return _users
+        .where((u) => u.status == 'approved' && !u.isSuperAdmin && u.email.toLowerCase() != MockData.adminEmail.toLowerCase())
+        .toList();
   }
 
   /// Fetch all rejected profiles
   List<UserModel> getRejectedUsers() {
-    return _users.where((u) => u.status == 'rejected').toList();
+    return _users
+        .where((u) => u.status == 'rejected' && !u.isSuperAdmin && u.email.toLowerCase() != MockData.adminEmail.toLowerCase())
+        .toList();
   }
 
   /// Super Admin: Approve a user's verification
@@ -774,7 +878,14 @@ class BackendService extends ChangeNotifier {
     final currentLng = _currentUser!.longitude ?? 79.8612;
 
     return _users.where((user) {
-      if (user.id == currentId || user.status != 'approved' || user.role == 'super_admin') {
+      // Never show Super Admin or unapproved users or self in the discovery feed
+      if (user.id == currentId ||
+          user.status != 'approved' ||
+          user.isSuperAdmin ||
+          user.role == 'admin' ||
+          user.role == 'super_admin' ||
+          user.email.toLowerCase() == MockData.adminEmail.toLowerCase() ||
+          user.id == MockData.adminId) {
         return false;
       }
 

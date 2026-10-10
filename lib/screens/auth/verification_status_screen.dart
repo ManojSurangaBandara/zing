@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../constants/app_theme.dart';
 import '../../models/user_model.dart';
 import '../../services/backend_service.dart';
@@ -47,7 +48,7 @@ class _VerificationStatusScreenState extends State<VerificationStatusScreen> {
         _isChecking = false;
       });
 
-      if (_user.isApproved) {
+      if (mounted && _user.isApproved) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             backgroundColor: AppTheme.success,
@@ -58,12 +59,19 @@ class _VerificationStatusScreenState extends State<VerificationStatusScreen> {
     });
   }
 
-  Future<void> _pickFile(Function(File) onPicked) async {
-    final xfile = await ImageCompressionService.pickImage();
-    if (xfile != null) {
-      final file = File(xfile.path);
-      final compressed = await ImageCompressionService.compressImageFile(file);
-      onPicked(compressed ?? file);
+  Future<void> _captureFile({
+    required Function(File) onPicked,
+    bool isFrontCamera = false,
+    ImageSource source = ImageSource.camera,
+  }) async {
+    final file = await ImageCompressionService.captureVerificationPhoto(
+      isFrontCamera: isFrontCamera,
+      source: source,
+    );
+    if (file != null) {
+      setState(() {
+        onPicked(file);
+      });
     }
   }
 
@@ -293,19 +301,46 @@ class _VerificationStatusScreenState extends State<VerificationStatusScreen> {
           _buildReuploadPicker(
             title: '1. Re-take Selfie Photo',
             file: _newSelfie,
-            onTap: () => _pickFile((f) => setState(() => _newSelfie = f)),
+            onCaptureCamera: () => _captureFile(
+              onPicked: (f) => setState(() => _newSelfie = f),
+              isFrontCamera: true,
+              source: ImageSource.camera,
+            ),
+            onPickGallery: () => _captureFile(
+              onPicked: (f) => setState(() => _newSelfie = f),
+              isFrontCamera: true,
+              source: ImageSource.gallery,
+            ),
           ),
           const SizedBox(height: 10),
           _buildReuploadPicker(
             title: '2. Re-upload NIC Front Side',
             file: _newNicFront,
-            onTap: () => _pickFile((f) => setState(() => _newNicFront = f)),
+            onCaptureCamera: () => _captureFile(
+              onPicked: (f) => setState(() => _newNicFront = f),
+              isFrontCamera: false,
+              source: ImageSource.camera,
+            ),
+            onPickGallery: () => _captureFile(
+              onPicked: (f) => setState(() => _newNicFront = f),
+              isFrontCamera: false,
+              source: ImageSource.gallery,
+            ),
           ),
           const SizedBox(height: 10),
           _buildReuploadPicker(
             title: '3. Re-upload NIC Back Side',
             file: _newNicBack,
-            onTap: () => _pickFile((f) => setState(() => _newNicBack = f)),
+            onCaptureCamera: () => _captureFile(
+              onPicked: (f) => setState(() => _newNicBack = f),
+              isFrontCamera: false,
+              source: ImageSource.camera,
+            ),
+            onPickGallery: () => _captureFile(
+              onPicked: (f) => setState(() => _newNicBack = f),
+              isFrontCamera: false,
+              source: ImageSource.gallery,
+            ),
           ),
           const SizedBox(height: 18),
           ElevatedButton(
@@ -389,45 +424,126 @@ class _VerificationStatusScreenState extends State<VerificationStatusScreen> {
   Widget _buildReuploadPicker({
     required String title,
     required File? file,
-    required VoidCallback onTap,
+    required VoidCallback onCaptureCamera,
+    required VoidCallback onPickGallery,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: file != null ? AppTheme.primary : AppTheme.border),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              file != null ? Icons.check_circle_rounded : Icons.add_a_photo_outlined,
-              color: file != null ? AppTheme.primary : AppTheme.textSecondary,
-              size: 20,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                file != null ? 'New photo selected ✓' : title,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: file != null ? FontWeight.w700 : FontWeight.w500,
-                  color: file != null ? AppTheme.primary : AppTheme.textPrimary,
+    final bool hasFile = file != null;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: hasFile ? AppTheme.success : AppTheme.border, width: hasFile ? 1.5 : 1.0),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onCaptureCamera, // Tapping row opens camera directly
+          child: Row(
+            children: [
+              Stack(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: hasFile ? AppTheme.success.withValues(alpha: 0.12) : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: hasFile
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.file(
+                              file,
+                              width: 44,
+                              height: 44,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.camera_alt_rounded,
+                            color: AppTheme.primary,
+                            size: 22,
+                          ),
+                  ),
+                  if (hasFile)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          color: AppTheme.success,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.check, size: 10, color: Colors.white),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      hasFile ? 'New photo captured ✓' : 'Tap camera to capture',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: hasFile ? AppTheme.success : AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-            Text(
-              file != null ? 'Change' : 'Select',
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.primary,
+              const SizedBox(width: 6),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: onCaptureCamera,
+                    icon: Icon(hasFile ? Icons.refresh_rounded : Icons.camera_alt_rounded, size: 14),
+                    label: Text(hasFile ? 'Retake' : 'Camera'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      minimumSize: const Size(0, 34),
+                      textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                      backgroundColor: hasFile ? AppTheme.primaryDark : AppTheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    onPressed: onPickGallery,
+                    tooltip: 'Choose from Gallery',
+                    icon: const Icon(Icons.photo_library_outlined, size: 18, color: AppTheme.textSecondary),
+                    style: IconButton.styleFrom(
+                      padding: const EdgeInsets.all(6),
+                      minimumSize: const Size(34, 34),
+                      backgroundColor: Colors.grey.shade100,
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

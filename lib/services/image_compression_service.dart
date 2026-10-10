@@ -7,11 +7,15 @@ import 'package:path_provider/path_provider.dart';
 class ImageCompressionService {
   static final ImagePicker _picker = ImagePicker();
 
-  /// Pick an image from gallery or camera
-  static Future<XFile?> pickImage({ImageSource source = ImageSource.gallery}) async {
+  /// Pick an image from gallery or camera with optional preferredCameraDevice
+  static Future<XFile?> pickImage({
+    ImageSource source = ImageSource.gallery,
+    CameraDevice preferredCameraDevice = CameraDevice.rear,
+  }) async {
     try {
       final XFile? file = await _picker.pickImage(
         source: source,
+        preferredCameraDevice: preferredCameraDevice,
         maxWidth: 1920,
         maxHeight: 1920,
         imageQuality: 85,
@@ -19,8 +23,35 @@ class ImageCompressionService {
       return file;
     } catch (e) {
       debugPrint('Error picking image: $e');
+      if (source == ImageSource.camera) {
+        // Fallback to gallery if camera is unavailable on device/emulator
+        try {
+          return await _picker.pickImage(
+            source: ImageSource.gallery,
+            maxWidth: 1920,
+            maxHeight: 1920,
+            imageQuality: 85,
+          );
+        } catch (_) {}
+      }
       return null;
     }
+  }
+
+  /// Convenient helper to capture verification documents (Live Selfie, NIC front/back)
+  /// directly with camera (or gallery) and automatically compress the result.
+  static Future<File?> captureVerificationPhoto({
+    bool isFrontCamera = false,
+    ImageSource source = ImageSource.camera,
+  }) async {
+    final xfile = await pickImage(
+      source: source,
+      preferredCameraDevice: isFrontCamera ? CameraDevice.front : CameraDevice.rear,
+    );
+    if (xfile == null) return null;
+    final file = File(xfile.path);
+    final compressed = await compressImageFile(file);
+    return compressed ?? file;
   }
 
   /// Pick multiple images for profile (up to maxAllowed)

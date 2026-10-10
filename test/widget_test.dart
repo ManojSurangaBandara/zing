@@ -16,4 +16,16 @@ void main() {
     await backend.markAllNotificationsRead();
     expect(backend.unreadNotificationsCount, equals(0));
   });
+
+  test('Super Admin is never shown in discovery feed for other users', () {
+    final backend = BackendService();
+    final discoverProfiles = backend.getDiscoverProfiles();
+    for (final profile in discoverProfiles) {
+      expect(profile.isSuperAdmin, isFalse);
+      expect(profile.role, isNot('admin'));
+      expect(profile.role, isNot('super_admin'));
+      expect(profile.email.toLowerCase(), isNot('admin@zing.lk'));
+      expect(profile.id, isNot('super_admin_zing_lk'));
+    }
+  });
 }
