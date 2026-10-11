@@ -594,6 +594,40 @@ class BackendService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Get a user by ID from local cache
+  UserModel? getUserById(String userId) {
+    try {
+      return _users.firstWhere((u) => u.id == userId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Fetch a user by ID from local memory or Cloud Firestore
+  Future<UserModel?> fetchUserById(String userId) async {
+    final local = getUserById(userId);
+    if (local != null) return local;
+
+    if (_isFirebaseAvailable) {
+      try {
+        final doc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
+        if (doc.exists && doc.data() != null) {
+          final user = UserModel.fromMap(doc.data()!, doc.id);
+          final idx = _users.indexWhere((u) => u.id == user.id);
+          if (idx != -1) {
+            _users[idx] = user;
+          } else {
+            _users.add(user);
+          }
+          return user;
+        }
+      } catch (e) {
+        debugPrint('Error fetching user doc $userId: $e');
+      }
+    }
+    return null;
+  }
+
   // ==================== SUPER ADMIN VERIFICATION ====================
 
   /// Fetch all profiles pending verification

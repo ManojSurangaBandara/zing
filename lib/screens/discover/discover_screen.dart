@@ -439,10 +439,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   Widget _buildProfileCard(UserModel profile, UserModel? currentUser) {
     String distanceString = '';
-    if (currentUser?.latitude != null && currentUser?.longitude != null && profile.latitude != null && profile.longitude != null) {
+    if (currentUser != null && currentUser.latitude != null && currentUser.longitude != null && profile.latitude != null && profile.longitude != null) {
       final km = LocationService.calculateDistanceKm(
-        startLat: currentUser!.latitude!,
-        startLng: currentUser!.longitude!,
+        startLat: currentUser.latitude!,
+        startLng: currentUser.longitude!,
         endLat: profile.latitude!,
         endLng: profile.longitude!,
       );

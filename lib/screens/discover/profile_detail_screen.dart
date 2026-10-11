@@ -5,7 +5,6 @@ import '../../models/user_model.dart';
 import '../../services/backend_service.dart';
 import '../../services/location_service.dart';
 import '../chat/chat_detail_screen.dart';
-import '../requests/connect_requests_screen.dart';
 
 class ProfileDetailScreen extends StatefulWidget {
   final UserModel user;
@@ -173,7 +172,9 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
   Widget build(BuildContext context) {
     final user = widget.user;
     final photos = user.photos.isNotEmpty ? user.photos : [user.primaryPhoto];
-    final currentUser = BackendService().currentUser;
+    final backend = BackendService();
+    final currentUser = backend.currentUser;
+    final hasReceivedRequest = backend.hasReceivedConnectRequestFrom(user.id);
 
     // Calculate distance
     String distanceText = '';
@@ -335,6 +336,56 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                         ],
                       ),
                       const SizedBox(height: 20),
+
+                      // If there is an incoming connect request with a personal message, display it
+                      if (hasReceivedRequest) ...[
+                        Builder(
+                          builder: (context) {
+                            final req = backend.getConnectRequestWith(user.id);
+                            if (req?.message != null && req!.message!.isNotEmpty) {
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 20),
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primary.withValues(alpha: 0.06),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: AppTheme.primary.withValues(alpha: 0.2)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.favorite_rounded, size: 16, color: AppTheme.primary),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Message from ${user.name.split(" ").first}:',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppTheme.primaryDark,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      '"${req.message}"',
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontStyle: FontStyle.italic,
+                                        color: AppTheme.textPrimary,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          },
+                        ),
+                      ],
 
                       // About Me / Bio
                       const Text(
@@ -502,20 +553,59 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
         ),
       );
     } else if (hasReceivedRequest) {
-      actionWidget = ElevatedButton.icon(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const ConnectRequestsScreen()),
-          );
-        },
-        icon: const Icon(Icons.mark_email_unread_rounded, size: 20),
-        label: Text('Respond to $firstName\'s Request'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppTheme.primary,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        ),
+      final request = backend.getConnectRequestWith(user.id);
+      actionWidget = Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () async {
+                if (request != null) {
+                  await backend.respondToConnectRequest(request.id, accept: false);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Declined connect request from $firstName'),
+                      ),
+                    );
+                  }
+                }
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.textSecondary,
+                side: const BorderSide(color: AppTheme.border),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+              child: const Text('Decline'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: ElevatedButton.icon(
+              onPressed: () async {
+                if (request != null) {
+                  final success = await backend.respondToConnectRequest(request.id, accept: true);
+                  if (success && mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        backgroundColor: AppTheme.success,
+                        content: Text('🎉 Connected with $firstName! You can now chat.'),
+                      ),
+                    );
+                  }
+                }
+              },
+              icon: const Icon(Icons.favorite_rounded, size: 20),
+              label: const Text('Accept & Match'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+            ),
+          ),
+        ],
       );
     } else if (isRejected) {
       actionWidget = Container(
