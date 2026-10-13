@@ -206,6 +206,7 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                       width: double.infinity,
                       child: PageView.builder(
                         controller: _pageController,
+                        physics: const AlwaysScrollableScrollPhysics(),
                         itemCount: photos.length,
                         onPageChanged: (idx) => setState(() => _activePhotoIndex = idx),
                         itemBuilder: (context, index) {
@@ -213,52 +214,56 @@ class _ProfileDetailScreenState extends State<ProfileDetailScreen> {
                         },
                       ),
                     ),
-                    // Gradient overlay at bottom of photo
-                    Container(
-                      height: 120,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
+                    // Gradient overlay at bottom of photo (IgnorePointer to avoid blocking swipes)
+                    IgnorePointer(
+                      child: Container(
+                        height: 120,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                          ),
                         ),
                       ),
                     ),
-                    // Photo indicator dots & Counter
+                    // Photo indicator dots & Counter (IgnorePointer to allow horizontal swipe pass-through)
                     Positioned(
                       bottom: 16,
                       left: 20,
                       right: 20,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: List.generate(photos.length, (idx) {
-                              final active = idx == _activePhotoIndex;
-                              return AnimatedContainer(
-                                duration: const Duration(milliseconds: 250),
-                                margin: const EdgeInsets.only(right: 6),
-                                width: active ? 20 : 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: active ? Colors.white : Colors.white.withOpacity(0.5),
-                                  borderRadius: BorderRadius.circular(3),
-                                ),
-                              );
-                            }),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.5),
-                              borderRadius: BorderRadius.circular(12),
+                      child: IgnorePointer(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: List.generate(photos.length, (idx) {
+                                final active = idx == _activePhotoIndex;
+                                return AnimatedContainer(
+                                  duration: const Duration(milliseconds: 250),
+                                  margin: const EdgeInsets.only(right: 6),
+                                  width: active ? 20 : 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: active ? Colors.white : Colors.white.withOpacity(0.5),
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                );
+                              }),
                             ),
-                            child: Text(
-                              '${_activePhotoIndex + 1} / ${photos.length}',
-                              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.5),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${_activePhotoIndex + 1} / ${photos.length}',
+                                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ],

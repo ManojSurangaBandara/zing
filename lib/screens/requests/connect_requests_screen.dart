@@ -52,19 +52,28 @@ class _ConnectRequestsScreenState extends State<ConnectRequestsScreen> with Sing
   Future<void> _openSenderProfile(ConnectRequestModel req) async {
     final backend = BackendService();
     UserModel? user = await backend.fetchUserById(req.senderId);
-    user ??= UserModel(
-      id: req.senderId,
-      email: '',
-      name: req.senderName,
-      age: req.senderAge,
-      gender: 'Member',
-      preference: 'Everyone',
-      district: req.senderDistrict,
-      town: req.senderTown,
-      bio: req.message ?? '',
-      photos: req.senderPhoto.isNotEmpty ? [req.senderPhoto] : const [],
-      interests: const [],
-    );
+    if (user != null) {
+      if (user.photos.isEmpty && req.senderPhotos.isNotEmpty) {
+        user = user.copyWith(photos: req.senderPhotos);
+      }
+    } else {
+      final photos = req.senderPhotos.isNotEmpty
+          ? req.senderPhotos
+          : (req.senderPhoto.isNotEmpty ? [req.senderPhoto] : const <String>[]);
+      user = UserModel(
+        id: req.senderId,
+        email: '',
+        name: req.senderName,
+        age: req.senderAge,
+        gender: 'Member',
+        preference: 'Everyone',
+        district: req.senderDistrict,
+        town: req.senderTown,
+        bio: (req.senderBio != null && req.senderBio!.isNotEmpty) ? req.senderBio! : (req.message ?? ''),
+        photos: photos,
+        interests: req.senderInterests,
+      );
+    }
 
     if (!mounted) return;
 

@@ -37,20 +37,23 @@ class _LoginScreenState extends State<LoginScreen> {
     if (result.user != null) {
       final user = result.user!;
       if (user.isSuperAdmin) {
-        Navigator.pushReplacement(
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (_) => const SuperAdminScreen()),
+          (route) => false,
         );
       } else if (user.isApproved) {
-        Navigator.pushReplacement(
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (_) => const HomeShell()),
+          (route) => false,
         );
       } else {
         // Pending or rejected user: take directly to verification status page
-        Navigator.pushReplacement(
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (_) => VerificationStatusScreen(user: user)),
+          (route) => false,
         );
       }
     } else {

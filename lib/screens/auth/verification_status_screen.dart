@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../constants/app_theme.dart';
 import '../../models/user_model.dart';
@@ -116,35 +117,42 @@ class _VerificationStatusScreenState extends State<VerificationStatusScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile Verification'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout_rounded),
-            tooltip: 'Log Out',
-            onPressed: () {
-              BackendService().logout();
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (_) => const WelcomeScreen()),
-                (route) => false,
-              );
-            },
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          children: [
-            const SizedBox(height: 10),
-            if (_user.isPending) _buildPendingCard(),
-            if (_user.isRejected) _buildRejectedCard(),
-            if (_user.isApproved) _buildApprovedCard(),
-            const SizedBox(height: 24),
-            _buildSubmittedDocumentsPreview(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        SystemNavigator.pop();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Profile Verification'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.logout_rounded),
+              tooltip: 'Log Out',
+              onPressed: () {
+                BackendService().logout();
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+                  (route) => false,
+                );
+              },
+            ),
           ],
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              if (_user.isPending) _buildPendingCard(),
+              if (_user.isRejected) _buildRejectedCard(),
+              if (_user.isApproved) _buildApprovedCard(),
+              const SizedBox(height: 24),
+              _buildSubmittedDocumentsPreview(),
+            ],
+          ),
         ),
       ),
     );
@@ -408,9 +416,10 @@ class _VerificationStatusScreenState extends State<VerificationStatusScreen> {
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: () {
-              Navigator.pushReplacement(
+              Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (_) => const HomeShell()),
+                (route) => false,
               );
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),

@@ -105,11 +105,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (result.success && result.user != null) {
       if (!mounted) return;
-      Navigator.pushReplacement(
+      Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(
           builder: (_) => VerificationStatusScreen(user: result.user!),
         ),
+        (route) => false,
       );
     } else {
       _showError(result.message);

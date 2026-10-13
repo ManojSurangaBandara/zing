@@ -1029,17 +1029,24 @@ class BackendService extends ChangeNotifier {
       return (success: false, message: 'Connect request already sent or pending.');
     }
 
+    final allPhotos = _currentUser!.photos.isNotEmpty
+        ? _currentUser!.photos
+        : (_currentUser!.primaryPhoto.isNotEmpty ? [_currentUser!.primaryPhoto] : <String>[]);
+
     final newRequest = ConnectRequestModel(
       id: _uuid.v4(),
       senderId: _currentUser!.id,
       receiverId: receiverId,
       senderName: _currentUser!.name,
       senderPhoto: _currentUser!.primaryPhoto,
+      senderPhotos: allPhotos,
       senderDistrict: _currentUser!.district,
       senderTown: _currentUser!.town,
       senderAge: _currentUser!.age,
       status: 'pending',
       message: greeting,
+      senderBio: _currentUser!.bio,
+      senderInterests: _currentUser!.interests,
       createdAt: DateTime.now(),
     );
 

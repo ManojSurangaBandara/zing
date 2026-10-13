@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../constants/app_theme.dart';
 import '../services/backend_service.dart';
 import 'discover/discover_screen.dart';
@@ -18,6 +19,7 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   late int _currentIndex;
+  DateTime? _lastBackPressTime;
 
   @override
   void initState() {
@@ -180,59 +182,85 @@ class _HomeShellState extends State<HomeShell> {
       const MyProfileScreen(),
     ];
 
-    return Scaffold(
-      body: screens[_currentIndex],
-      floatingActionButton: (user != null && user.isSuperAdmin)
-          ? FloatingActionButton.extended(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const SuperAdminScreen()),
-                );
-              },
-              icon: const Icon(Icons.admin_panel_settings_rounded, color: Colors.white),
-              label: const Text('Admin Panel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              backgroundColor: const Color(0xFF6366F1),
-            )
-          : null,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
-        backgroundColor: Colors.white,
-        elevation: 4,
-        indicatorColor: AppTheme.primary.withOpacity(0.15),
-        destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.local_fire_department_outlined),
-            selectedIcon: Icon(Icons.local_fire_department_rounded, color: AppTheme.primary),
-            label: 'Discover',
-          ),
-          NavigationDestination(
-            icon: Badge(
-              isLabelVisible: receivedRequestsCount > 0,
-              label: Text('$receivedRequestsCount'),
-              backgroundColor: AppTheme.primary,
-              child: const Icon(Icons.favorite_border_rounded),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        // If not on Discover (first tab), navigate back to Discover tab first
+        if (_currentIndex != 0) {
+          setState(() => _currentIndex = 0);
+          return;
+        }
+        // If already on Discover tab, double-press back to exit the app
+        final now = DateTime.now();
+        if (_lastBackPressTime == null || now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+          _lastBackPressTime = now;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Press back again to exit'),
+              duration: Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
             ),
-            selectedIcon: Badge(
-              isLabelVisible: receivedRequestsCount > 0,
-              label: Text('$receivedRequestsCount'),
-              backgroundColor: AppTheme.primary,
-              child: const Icon(Icons.favorite_rounded, color: AppTheme.primary),
+          );
+          return;
+        }
+        // Gracefully exit the app (never pop to Login screen)
+        SystemNavigator.pop();
+      },
+      child: Scaffold(
+        body: screens[_currentIndex],
+        floatingActionButton: (user != null && user.isSuperAdmin)
+            ? FloatingActionButton.extended(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SuperAdminScreen()),
+                  );
+                },
+                icon: const Icon(Icons.admin_panel_settings_rounded, color: Colors.white),
+                label: const Text('Admin Panel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                backgroundColor: const Color(0xFF6366F1),
+              )
+            : null,
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _currentIndex,
+          onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
+          backgroundColor: Colors.white,
+          elevation: 4,
+          indicatorColor: AppTheme.primary.withOpacity(0.15),
+          destinations: [
+            const NavigationDestination(
+              icon: Icon(Icons.local_fire_department_outlined),
+              selectedIcon: Icon(Icons.local_fire_department_rounded, color: AppTheme.primary),
+              label: 'Discover',
             ),
-            label: 'Requests',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline_rounded),
-            selectedIcon: Icon(Icons.chat_bubble_rounded, color: AppTheme.primary),
-            label: 'Messages',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded, color: AppTheme.primary),
-            label: 'Profile',
-          ),
-        ],
+            NavigationDestination(
+              icon: Badge(
+                isLabelVisible: receivedRequestsCount > 0,
+                label: Text('$receivedRequestsCount'),
+                backgroundColor: AppTheme.primary,
+                child: const Icon(Icons.favorite_border_rounded),
+              ),
+              selectedIcon: Badge(
+                isLabelVisible: receivedRequestsCount > 0,
+                label: Text('$receivedRequestsCount'),
+                backgroundColor: AppTheme.primary,
+                child: const Icon(Icons.favorite_rounded, color: AppTheme.primary),
+              ),
+              label: 'Requests',
+            ),
+            const NavigationDestination(
+              icon: Icon(Icons.chat_bubble_outline_rounded),
+              selectedIcon: Icon(Icons.chat_bubble_rounded, color: AppTheme.primary),
+              label: 'Messages',
+            ),
+            const NavigationDestination(
+              icon: Icon(Icons.person_outline_rounded),
+              selectedIcon: Icon(Icons.person_rounded, color: AppTheme.primary),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
     );
   }
